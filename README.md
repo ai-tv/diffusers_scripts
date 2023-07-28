@@ -21,6 +21,7 @@ Divisions Posoitions 以及 Weights 都只是帮助使用 webUI 的人画出下�
 
 ## 现在来用伪代码实现上述 webUI 中 latent couple
 1. 构建 3 张（不一定是 3 张，看你的 prompts 有几条，不过多了效果会变差）mask 图
+   
   a. Prompt A 对应的 maskA：一个 shape=(1,4,64,64) 全为 weight A 的 tensor
 
   `torch.from_numpy(np.ones((1,4,64,64), dtype=np.float16) * weight_A).to("cuda")`
