@@ -30,7 +30,9 @@ Divisions Posoitions 以及 Weights 都只是帮助使用 webUI 的人画出下�
 2. 采样循环中把这些加进去，在单个采样 step 中：
 L = pred_text(PromptA) * maskA + pred_text(PromptB1) * maskB1 + pred_text(PromptB2) * maskB2
 
+## 用法
+diffusers_latent_couple 实现了 latent_couple 的 pipeline
+与 diffusers 的 pipeline 调用形式相同
 
-TODO future
-对齐 diffusers 和 webui
-拆解单 lora
+**自定义 mask 在 line 756~764 行，可以完全替换 position、division 等晦涩的参数**
+
