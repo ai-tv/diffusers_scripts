@@ -4,10 +4,13 @@
 一点也不神秘！！！
 
 我们通常见到的 Latent Couple 界面是这样的：
+
 ![webUI](LC_webUI.PNG)
 
-其对应的 Prompts 是这样的
+其对应的 Prompts 是这样的：
+
 ![prompts](LC_prompts.PNG)
+
 一堆数字，冒号，逗号，都是啥啊，什么鬼啊？
 Divisions Posoitions 以及 Weights 都只是帮助使用 webUI 的人画出下面这 3 张可视化图的，但是写成这样属实是一坨屎！
 
