@@ -21,14 +21,21 @@ Divisions Posoitions 以及 Weights 都只是帮助使用 webUI 的人画出下�
 
 ## 现在来用伪代码实现上述 webUI 中 latent couple
 1. 构建 3 张（不一定是 3 张，看你的 prompts 有几条，不过多了效果会变差）mask 图
-  1. Prompt A 对应的 maskA：一个 shape=(1,4,64,64) 全为 weight A 的 tensor
-  torch.from_numpy(np.ones((1,4,64,64), dtype=np.float16) * weight_A).to("cuda")
-  2. Prompt B1 对应的 maskB1：一个 shape=(1,4,64,64)，左边为 weight B1，右边为 0 的 tensor
-  torch.from_numpy(np.concatenate((np.ones((1,4,64,32), dtype=np.float16), np.zeros((1,4,64,32), dtype=np.float16)), axis=-1) * weight_B1).to("cuda")
-  3. Prompt B2 对应的 maskB2：一个 shape=(1,4,64,64)，左边为 0，右边为 weight B2 的 tensor
-  torch.from_numpy(np.concatenate((np.zeros((1,4,64,32), dtype=np.float16), np.ones((1,4,64,32), dtype=np.float16)), axis=-1) * weight_B2).to("cuda")
+  a. Prompt A 对应的 maskA：一个 shape=(1,4,64,64) 全为 weight A 的 tensor
+
+  `torch.from_numpy(np.ones((1,4,64,64), dtype=np.float16) * weight_A).to("cuda")`
+  
+  b. Prompt B1 对应的 maskB1：一个 shape=(1,4,64,64)，左边为 weight B1，右边为 0 的 tensor
+  
+  `torch.from_numpy(np.concatenate((np.ones((1,4,64,32), dtype=np.float16), np.zeros((1,4,64,32), dtype=np.float16)), axis=-1) * weight_B1).to("cuda")`
+  
+  c. Prompt B2 对应的 maskB2：一个 shape=(1,4,64,64)，左边为 0，右边为 weight B2 的 tensor
+  
+  `torch.from_numpy(np.concatenate((np.zeros((1,4,64,32), dtype=np.float16), np.ones((1,4,64,32), dtype=np.float16)), axis=-1) * weight_B2).to("cuda")`
+  
 2. 采样循环中把这些加进去，在单个采样 step 中：
-L = pred_text(PromptA) * maskA + pred_text(PromptB1) * maskB1 + pred_text(PromptB2) * maskB2
+   
+  `L = pred_text(PromptA) * maskA + pred_text(PromptB1) * maskB1 + pred_text(PromptB2) * maskB2`
 
 ## 用法
 diffusers_latent_couple 实现了 latent_couple 的 pipeline
