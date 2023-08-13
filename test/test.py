@@ -10,7 +10,6 @@ from diffusers import UNet2DConditionModel
 from transformers import CLIPTextModel
 
 from sbp.io.common.utils import read_img_from_list
-sys.path.append('../')
 from latent_couple.lora_loader import LoraLoader
 from latent_couple.couple import latent_couple_with_control
 
@@ -19,9 +18,8 @@ def _load_default_pipeline():
     control_model = ControlNetModel.from_pretrained(
         "lllyasviel/control_v11p_sd15_canny", torch_dtype=torch.float16)
     pipe_ = StableDiffusionPipeline.from_pretrained(
-        '/home/zwshi/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/',
+        '~/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/',
         torch_dtype=torch.float16,
-        cache_dir='/home/zwshi/.cache/huggingface/hub/',
         load_safety_checker=False,
         local_files_only=True,
         safety_checker = None
@@ -35,11 +33,11 @@ def _load_default_pipeline():
             text_encoder = pipe_.text_encoder
         else:
             text_encoder = CLIPTextModel.from_pretrained(
-                '/home/zwshi/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/text_encoder/',
+                '~/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/text_encoder/',
                 torch_dtype=torch.float16,
             )
             unet = UNet2DConditionModel.from_pretrained(
-                "/home/zwshi/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/unet/", 
+                "~/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/unet/", 
                 torch_dtype=torch.float16
             )
         pipe = StableDiffusionControlNetPipeline(

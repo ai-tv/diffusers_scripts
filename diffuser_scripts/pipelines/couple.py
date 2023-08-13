@@ -8,7 +8,7 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.utils.torch_utils import is_compiled_module
 from diffusers.pipelines.controlnet import MultiControlNetModel
 
-from latent_couple.long_prompt_weighting import get_weighted_text_embeddings
+from diffuser_scripts.latent_couple.long_prompt_weighting import get_weighted_text_embeddings
 
 
 def make_mask_list(
@@ -89,7 +89,6 @@ def prepare_image(
 
     return image
 
-StableDiffusionControlNetPipeline.prepare_image = prepare_image
 
 
 @torch.no_grad()
@@ -163,7 +162,8 @@ def latent_couple_with_control(
     
     # 4. Prepare image
     if isinstance(controlnet, ControlNetModel):
-        image = pipes[0].prepare_image(
+        image = prepare_image(
+            pipes[0],
             image=image,
             width=width,
             height=height,
@@ -179,7 +179,8 @@ def latent_couple_with_control(
     elif isinstance(controlnet, MultiControlNetModel):
         images = []
         for image_ in image:
-            image_ = pipes[0].prepare_image(
+            image_ = prepare_image(
+                pipes[0],
                 image=image_,
                 width=width,
                 height=height,
