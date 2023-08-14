@@ -48,12 +48,13 @@ class Txt2ImageParams:
     prompt: str
     negative_prompt: str
     base_model: str
-    lora_configs: T.List[(str, float)]
+    lora_configs: T.Dict[str, float]
     guidance_scale: float = 8.0
     num_image_per_prompt: int = 1
     height: int = 768
     width: int = 512
     sampler: str = 'sde-dmpsolver++'
+    num_inference_steps: int = 30
     extra_params: T.Optional[T.Dict] = None
 
     @property
@@ -65,11 +66,14 @@ class Txt2ImageParams:
 class Txt2ImageWithControlParams(Txt2ImageParams):
     """ request for txt2image with controlnet """
 
-    condition_img_str: str
+    condition_img_str: str = None
+    control_guidance_scale: T.Union[float, T.List[float]] = 1.0
+    control_guidance_start: T.Union[float, T.List[float]] = 0.0
+    control_guidance_end: T.Union[float, T.List[float]] = 0.5
 
     @property
     def condition_image(self):
-        self.condition_image = decode_image_b64(self.condition_img_str)
+        return Image.fromarray(decode_image_b64(self.condition_img_str))
 
 
 @dataclass
@@ -77,11 +81,13 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     """ request for latent couple pipeline with controlnet """
 
     prompt: T.List[str]
+    negative_prompt: T.List[str]
     base_model: T.List[str]
-    model_names: T.List[str]
-    latent_mask_weight = T.List[float]
-    latent_decay = T.List[float]
-    latent_mask = T.List[str]
+    lora_configs: T.List[T.Dict[str, float]]
+    latent_mask_weight: T.List[float] = (0.7, 0.3, 0.3)
+    latent_mask_weight_decay: T.List[float] = 0.01
+    latent_pos: T.List[str] = None
+    latent_mask: T.List[str] = None
 
 
 @dataclass
@@ -94,3 +100,19 @@ class ImageGenerationResult:
     @staticmethod
     def from_task_and_image(task: Txt2ImageParams, image: T.Union[Image.Image, np.ndarray]):
         return ImageGenerationResult(task, encode_image_b64(image))
+
+    @staticmethod
+    def from_json(obj):
+        task = obj['task']
+        return ImageGenerationResult(
+            LatentCoupleWithControlTaskParams(**task),
+            result_image_str=obj['result_image_str']
+        )
+
+    @property
+    def json(self):
+        return asdict(self)
+
+    @property
+    def generated_image(self):
+        return Image.fromarray(decode_image_b64(self.result_image_str))

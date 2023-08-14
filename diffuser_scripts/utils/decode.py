@@ -7,11 +7,11 @@ import numpy as np
 from PIL import Image
 
 
-def encode_image_b64(image, ext='png'):
+def encode_image_b64(image, ext='.png'):
     if isinstance(image, Image.Image):
-        image = np.array(Image)
+        image = np.array(image)
     _, data = cv2.imencode(ext, image)        
-    return base64.b64encode(data)
+    return base64.b64encode(data).decode()
     
 
 def decode_image_b64(encoded):

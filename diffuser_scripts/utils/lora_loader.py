@@ -10,14 +10,16 @@ class LoraLoader:
         modified from https://github.com/huggingface/diffusers/issues/3064#issuecomment-1512429695
     """
     def __init__(self):
-        self._records = set()
+        self._records = defaultdict(lambda : 0)
 
     def load_lora_weights(self, pipeline, checkpoint_path, multiplier, device, dtype):
         pipeline_id = id(pipeline)
-        if (pipeline_id, checkpoint_path) in self._records:
-            raise ValueError("cannot load %s for pipeline<%s> twice, lora already loaded" % (checkpoint_path, pipeline_id))
-
-        self._records.add((pipeline_id, checkpoint_path))
+        key = (pipeline_id, checkpoint_path)
+        if multiplier > 0:
+            assert self._records[key] == 0
+        self._records[key] += multiplier
+        if abs(self._records[key]) < 1e-6:
+            del self._records[key]
         LORA_PREFIX_UNET = "lora_unet"
         LORA_PREFIX_TEXT_ENCODER = "lora_te"
         # load LoRA weight from .safetensors
@@ -75,9 +77,10 @@ class LoraLoader:
 
     def unload_lora_weight(self, pipeline, checkpoint_path, multiplier, device, dtype):
         pipeline_id = id(pipeline)
-        if (pipeline_id, checkpoint_path) not in self._records:
+        key = (pipeline_id, checkpoint_path)
+        if key not in self._records:
             raise ValueError("cannot unload %s for pipeline<%s>, lora not loaded" % (checkpoint_path, pipeline_id))
-        return self.load_lora_weights(pipeline, checkpoint_path, multiplier=-1, device=device, dtype=dtype)
+        return self.load_lora_weights(pipeline, checkpoint_path, multiplier=-multiplier, device=device, dtype=dtype)
 
     def load_lora_for_pipelines(self, pipes, lora_configs):
         for pipe, lora_config in zip(pipes, lora_configs):

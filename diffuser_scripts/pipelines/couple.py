@@ -8,16 +8,17 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.utils.torch_utils import is_compiled_module
 from diffusers.pipelines.controlnet import MultiControlNetModel
 
-from diffuser_scripts.latent_couple.long_prompt_weighting import get_weighted_text_embeddings
+from diffuser_scripts.utils import get_weighted_text_embeddings
 
 
 def make_mask_list(
     pos=["1:1-0:0","1:2-0:0","1:2-0:1"], 
-    weights = [0.7, 0.3, 0.3]
+    weights = [0.7, 0.3, 0.3],
+    width: int = 1024,
+    height: int = 768
 ):
     mask_list = []
     batch_size = 1
-    width, height = 1024, 768
     device = 'cuda'
     for idx in range(len(pos)):
         pos_base = pos[idx].split("-")
@@ -118,10 +119,10 @@ def latent_couple_with_control(
     controlnet_conditioning_scale = 1.0,
     main_prompt_decay = 0.01,
 ):
-    mask_list = make_mask_list(couple_pos, weights=couple_weights)
+    mask_list = make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
     prompt_embeddings = []
     for i, prompt in enumerate(prompts):
-        text_embedding, uncond_embedding = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=negative_prompts, )
+        text_embedding, uncond_embedding = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=negative_prompts[i], )
         prompt_embeddings.append(text_embedding)
     prompt_embeds = prompt_embeddings
     negative_prompt_embed = uncond_embedding

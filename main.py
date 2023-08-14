@@ -79,8 +79,8 @@ async def handle_latent_couple (request: Request):
             couple_pos = params.latent_pos,
             couple_weights = params.latent_mask_weight, 
             negative_prompts = params.negative_prompt, 
-            height=params.height,
-            width=params.width,
+            height = params.height,
+            width = params.width,
             guidance_scale = params.guidance_scale,
             num_inference_steps = params.num_inference_steps,
             control_guidance_start = params.control_guidance_start,
@@ -88,4 +88,5 @@ async def handle_latent_couple (request: Request):
             controlnet_conditioning_scale = params.control_guidance_scale,
             main_prompt_decay = params.latent_mask_weight_decay
         )
-        return ImageGenerationResult.from_task_and_image(params, Image).json
+        lora_loader.unload_lora_for_pipelines(pipelines, lora_configs)
+        return ImageGenerationResult.from_task_and_image(params, result).json
