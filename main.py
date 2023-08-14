@@ -1,4 +1,5 @@
 import os
+import random
 from threading import Lock
 
 import torch
@@ -70,6 +71,7 @@ async def handle_latent_couple (request: Request):
     params = LatentCoupleWithControlTaskParams(**data)
     control_image = params.condition_image
     lora_configs = [{os.path.join('/mnt/2T/zwshi/model_zoo/%s.safetensors' % k): v for k, v in config.items()} for config in params.lora_configs]
+    random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
     with _lock:
         lora_loader.load_lora_for_pipelines(pipelines, lora_configs)
         result = latent_couple_with_control(
@@ -86,7 +88,8 @@ async def handle_latent_couple (request: Request):
             control_guidance_start = params.control_guidance_start,
             control_guidance_end = params.control_guidance_end,
             controlnet_conditioning_scale = params.control_guidance_scale,
-            main_prompt_decay = params.latent_mask_weight_decay
+            main_prompt_decay = params.latent_mask_weight_decay,
+            generator=torch.Generator(device='cuda').manual_seed(random_seed)
         )
         lora_loader.unload_lora_for_pipelines(pipelines, lora_configs)
-        return ImageGenerationResult.from_task_and_image(params, result).json
+    return ImageGenerationResult.from_task_and_image(params, result).json

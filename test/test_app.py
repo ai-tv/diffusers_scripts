@@ -34,6 +34,7 @@ def test_post_app():
         "control_guidance_end": 0.5,
         "latent_mask_weight": [0.7, 0.3, 0.3],
         "latent_pos": ["1:1-0:0","1:2-0:0","1:2-0:1"],
+        "random_seed": 1234
     }
     start = time.time()
     response = requests.post("http://192.168.110.102:1234/get_latent_couple", data=json.dumps(obj))

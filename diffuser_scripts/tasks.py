@@ -56,6 +56,7 @@ class Txt2ImageParams:
     sampler: str = 'sde-dmpsolver++'
     num_inference_steps: int = 30
     extra_params: T.Optional[T.Dict] = None
+    random_seed: int = -1
 
     @property
     def json(self):
