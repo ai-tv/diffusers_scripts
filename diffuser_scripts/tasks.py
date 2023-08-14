@@ -48,7 +48,7 @@ class Txt2ImageParams:
     prompt: str
     negative_prompt: str
     base_model: str
-    lora_configs: T.List[(str, float)]
+    lora_configs: T.Dict[str, float]
     guidance_scale: float = 8.0
     num_image_per_prompt: int = 1
     height: int = 768
@@ -82,6 +82,7 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     latent_mask_weight = T.List[float]
     latent_decay = T.List[float]
     latent_mask = T.List[str]
+    lora_configs = T.List[T.Dict[str, float]]
 
 
 @dataclass
@@ -94,3 +95,7 @@ class ImageGenerationResult:
     @staticmethod
     def from_task_and_image(task: Txt2ImageParams, image: T.Union[Image.Image, np.ndarray]):
         return ImageGenerationResult(task, encode_image_b64(image))
+
+    @property
+    def json(self):
+        return asdict(self)
