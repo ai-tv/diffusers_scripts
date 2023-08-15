@@ -1,4 +1,5 @@
 import os
+import json
 import random
 from threading import Lock
 
@@ -11,8 +12,12 @@ from diffuser_scripts.tasks import LatentCoupleWithControlTaskParams, ImageGener
 
 
 app = FastAPI()
-config = LatentCoupleConfig.from_json("configs/latent_couple_config.json")
-model_manager = LatentCouplePipelinesManager(config)
+default_model_path = "configs/default_model_infos.json"
+default_pipeline_path = "configs/latent_couple_config.json"
+pipelin_config = LatentCoupleConfig.from_json(default_pipeline_path)
+if os.path.exists(default_model_path):
+    model_config = json.load(open(default_model_path))
+model_manager = LatentCouplePipelinesManager(config=pipelin_config, model_config=model_config)
 
 
 @app.post("/get_latent_couple")

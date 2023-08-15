@@ -95,8 +95,8 @@ def load_latent_couple_pipeline(
 
 class LatentCouplePipelinesManager:
 
-    def __init__(self, config: LatentCoupleConfig):
-        self.pipelines = load_latent_couple_pipeline(config)
+    def __init__(self, config: LatentCoupleConfig, model_config = default_model_infos):
+        self.pipelines = load_latent_couple_pipeline(config, model_config)
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
         self.lock = Lock()
