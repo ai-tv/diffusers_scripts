@@ -1,0 +1,14 @@
+accelerate==0.21.0
+diffusers==0.19.3
+fastapi==0.101.1
+fire==0.5.0
+numpy==1.25.0
+sopencv_python==4.8.0.74
+packaging==23.1
+Pillow==9.4.0
+Requests==2.31.0
+safetensors==0.3.1
+setuptools==68.0.0
+torch==2.0.1
+torchvision==0.15.2
+transformers==4.31.0

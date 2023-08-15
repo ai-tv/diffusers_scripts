@@ -1,5 +1,10 @@
 ## Usage
 
+### install
+`pip install -r requirements.txt`
+`pip install -e . `
+(Not actually tested, #TODO ensure)
+
 ### start server
 
 * config the model path in `configs/default_model_infos.json`
@@ -11,7 +16,7 @@ CUDA_VISIBLE_DEVICES=0 uvicorn main:app --port 1234 --workers 1 --host 0.0.0.0
 
 ### request api
 
-see following example in `test/test_app.py``
+see following example in `test/test_app.py`
 
 ```{python}
 import json
