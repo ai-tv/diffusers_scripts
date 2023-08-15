@@ -1,0 +1,9 @@
+{
+    "model_names": [
+        "chilloutmix",
+        "chilloutmix",
+        "chilloutmix"
+    ],
+    "use_controlnet": true,
+    "default_controlnet_name": "lllyasviel/control_v11p_sd15_canny"
+}

@@ -1,0 +1,7 @@
+{
+    "chilloutmix": {
+        "load_method": "pretrained",
+        "local_path": "/home/zwshi/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/",
+        "path": "emilianJR/chilloutmix_NiPrunedFp32Fix"
+    }
+}
