@@ -11,6 +11,14 @@ from diffusers.pipelines.controlnet import MultiControlNetModel
 from diffuser_scripts.utils import get_weighted_text_embeddings
 
 
+def in_range(i, s):
+    if '-' in s:
+        s, e = map(int, s.split('-'))
+        return i >= s and i < e
+    else:
+        return i == int(s)
+
+
 def make_mask_list(
     pos=["1:1-0:0","1:2-0:0","1:2-0:1"], 
     weights = [0.7, 0.3, 0.3],
@@ -20,8 +28,8 @@ def make_mask_list(
     mask_list = []
     batch_size = 1
     device = 'cuda'
-    for idx in range(len(pos)):
-        pos_base = pos[idx].split("-")
+    for idx, _pos in enumerate(pos):
+        pos_base = _pos.split("-", maxsplit=1)
         pos_dev = pos_base[0].split(":")
         pos_pos = pos_base[1].split(":")
         one_filter = None
@@ -32,7 +40,7 @@ def make_mask_list(
             one_line = None
             zero = False
             for x in range(int(pos_dev[1])):
-                if(y == int(pos_pos[0]) and x == int(pos_pos[1])):
+                if in_range(y, pos_pos[0]) and in_range(x, pos_pos[1]):
                     if zero:
                         one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float16) * weight
                         one_line = torch.cat((one_line, one_block), 3)
