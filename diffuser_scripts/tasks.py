@@ -91,6 +91,7 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     latent_mask: T.List[str] = None
 
 
+
 @dataclass
 class ImageGenerationResult:
     """ image generation result """
