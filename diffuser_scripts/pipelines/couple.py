@@ -122,6 +122,7 @@ def latent_couple_with_control(
     eta: float = 0.0,
     cross_attention_kwargs = None,
     guess_mode = False,
+    control_mode = 'prompt',
     control_guidance_start: Union[float, List[float]] = 0.0,
     control_guidance_end: Union[float, List[float]] = 0.5,
     controlnet_conditioning_scale = 1.0,
@@ -240,8 +241,10 @@ def latent_couple_with_control(
             for s, e in zip(control_guidance_start, control_guidance_end)
         ]
         controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
-    # print(controlnet_keep)
-    
+    if control_mode == 'prompt':
+        controlnet_scales = [controlnet_conditioning_scale * (0.825 ** float(12 - i)) for i in range(13)]    
+    else:
+        controlnet_scales = [1 for _ in range(13)]
     
     # 8. Denoising loop
     # num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
@@ -285,6 +288,9 @@ def latent_couple_with_control(
             guess_mode=guess_mode,
             return_dict=False,
         )
+        down_block_res_samples = [ds * s for ds, s in zip(down_block_res_samples, controlnet_scales)]
+        mid_block_res_sample = mid_block_res_sample * controlnet_scales[-1]
+
         down_block_res_samples_list, mid_block_res_sample_list = [], []
         for j in range(len(text_embeddings)):
             down_block_res_samples_list.append([torch.stack([d[-1], d[j]], dim=0) for d in down_block_res_samples])

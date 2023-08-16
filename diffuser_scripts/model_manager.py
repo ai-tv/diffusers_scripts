@@ -9,7 +9,7 @@ import torch
 from transformers import CLIPTextModel
 from diffusers import UNet2DConditionModel
 from diffusers import StableDiffusionPipeline, StableDiffusionControlNetPipeline, ControlNetModel
-from diffusers.schedulers import DPMSolverMultistepScheduler
+from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDEScheduler, DPMSolverSinglestepScheduler
 
 from diffuser_scripts.utils.lora_loader import LoraLoader
 
@@ -60,6 +60,7 @@ def load_latent_couple_pipeline(
     )
     scheduler = DPMSolverMultistepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     scheduler.config.algorithm_type = 'sde-dpmsolver++'
+    # scheduler = DPMSolverSinglestepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     pipes = []
     for i, name in enumerate(config.model_names):
         if i == 0:
@@ -100,6 +101,11 @@ class LatentCouplePipelinesManager:
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
         self.lock = Lock()
+
+    def change_controlnet(self, controlnet_path):
+        control_model = ControlNetModel.from_pretrained(controlnet_path, torch_dtype=torch.float16)
+        for pipe in self.pipelines:
+            pipe.controlnet = control_model
 
     def load_lora(self, i, lora, weight=1.0):
         pipe = self.pipelines[i]

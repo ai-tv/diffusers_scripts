@@ -68,6 +68,8 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     """ request for txt2image with controlnet """
 
     condition_img_str: str = None
+    control_model_name: str = 'lllyasviel/control_v11p_sd15_canny'
+    control_mode: str = 'prompt' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
@@ -89,6 +91,10 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     latent_mask_weight_decay: T.List[float] = 0.01
     latent_pos: T.List[str] = None
     latent_mask: T.List[str] = None
+
+    @property
+    def json(self):
+        return asdict(self)
 
 
 

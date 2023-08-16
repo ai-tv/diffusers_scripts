@@ -28,7 +28,7 @@ async def handle_latent_couple (request: Request):
     params = LatentCoupleWithControlTaskParams(**data)
     control_image = params.condition_image
     lora_configs = [{os.path.join('/mnt/2T/zwshi/model_zoo/%s.safetensors' % k): v for k, v in config.items()} for config in params.lora_configs]
-    random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
+    params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
 
     dump_request_to_file(params, 'log')
     dump_image_to_dir(control_image, 'log', name='condition')
@@ -49,11 +49,12 @@ async def handle_latent_couple (request: Request):
                 width = params.width,
                 guidance_scale = params.guidance_scale,
                 num_inference_steps = params.num_inference_steps,
+                control_mode = params.control_mode,
                 control_guidance_start = params.control_guidance_start,
                 control_guidance_end = params.control_guidance_end,
                 controlnet_conditioning_scale = params.control_guidance_scale,
                 main_prompt_decay = params.latent_mask_weight_decay,
-                generator=torch.Generator(device='cuda').manual_seed(random_seed)
+                generator=torch.Generator(device='cuda').manual_seed(params.random_seed)
             )
             dump_image_to_dir(result, 'log', name='result')
         except Exception as e:
