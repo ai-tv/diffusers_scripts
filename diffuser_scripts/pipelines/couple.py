@@ -317,7 +317,7 @@ def latent_couple_with_control(
             )[0]
             noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-            this_mask =  torch.where(mask_list[j] > 0, mask_list[j] + 0.01 * i * (-1 if j == 0 else 1), mask_list[j])
+            this_mask =  torch.where(mask_list[j] > 0, mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), mask_list[j])
             latent_couple += noise_pred * this_mask
         latents = pipes[0].scheduler.step(latent_couple, t, latents, **extra_step_kwargs).prev_sample
 
