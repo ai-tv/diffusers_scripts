@@ -9,7 +9,7 @@ from PIL import Image
 
 def encode_image_b64(image, ext='.png'):
     if isinstance(image, Image.Image):
-        image = np.array(image)
+        image = np.array(image)[..., ::-1]
     _, data = cv2.imencode(ext, image)        
     return base64.b64encode(data).decode()
     

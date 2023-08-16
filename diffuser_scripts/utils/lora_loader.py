@@ -16,9 +16,9 @@ class LoraLoader:
         pipeline_id = id(pipeline)
         key = (pipeline_id, checkpoint_path)
         if multiplier > 0:
-            assert self._records[key] == 0
+            assert self._records[key] == 0, "<%s: %.3f>" % (key, self._records[key])
         self._records[key] += multiplier
-        if abs(self._records[key]) < 1e-6:
+        if abs(self._records[key]) < 1e-3:
             del self._records[key]
         LORA_PREFIX_UNET = "lora_unet"
         LORA_PREFIX_TEXT_ENCODER = "lora_te"
