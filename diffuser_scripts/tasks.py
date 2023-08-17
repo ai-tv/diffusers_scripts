@@ -69,7 +69,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
 
     condition_img_str: str = None
     control_model_name: str = 'lllyasviel/control_v11p_sd15_canny'
-    control_mode: str = 'prompt' # [prompt, balance, control] as in webui
+    control_mode: str = 'balance' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
@@ -88,7 +88,7 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     base_model: T.List[str]
     lora_configs: T.List[T.Dict[str, float]]
     latent_mask_weight: T.List[float] = (0.7, 0.3, 0.3)
-    latent_mask_weight_decay: T.List[float] = 0.01
+    latent_mask_weight_decay: T.List[float] = 0.03
     latent_pos: T.List[str] = None
     latent_mask: T.List[str] = None
 

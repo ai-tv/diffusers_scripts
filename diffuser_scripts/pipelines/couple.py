@@ -42,21 +42,21 @@ def make_mask_list(
             for x in range(int(pos_dev[1])):
                 if in_range(y, pos_pos[0]) and in_range(x, pos_pos[1]):
                     if zero:
-                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float16) * weight
+                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32) * weight
                         one_line = torch.cat((one_line, one_block), 3)
                     else:
                         zero = True
-                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float16) * weight
+                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32) * weight
                         one_line = one_block
                 else:
                     if zero:
-                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float16)
+                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32)
                         one_line = torch.cat((one_line, one_block), 3)
                     else:
                         zero = True
-                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float16)
+                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32)
                         one_line = one_block
-            one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) - one_line.size()[3]).to(device).to(torch.float16)
+            one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) - one_line.size()[3]).to(device).to(torch.float32)
             one_line = torch.cat((one_line, one_block), 3)
             if zero_f:
                 one_filter = torch.cat((one_filter, one_line), 2)
@@ -317,9 +317,14 @@ def latent_couple_with_control(
             )[0]
             noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-            this_mask =  torch.where(mask_list[j] > 0, mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), mask_list[j])
-            latent_couple += noise_pred * this_mask
-        latents = pipes[0].scheduler.step(latent_couple, t, latents, **extra_step_kwargs).prev_sample
+            this_mask =  torch.where(
+                mask_list[j] > 0, 
+                torch.clip(mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), 0.1, 0.9), 
+                mask_list[j]
+            )
+            # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
+            latent_couple += noise_pred.to(dtype=this_mask.dtype) * this_mask
+        latents = pipes[0].scheduler.step(latent_couple.to(dtype=noise_pred.dtype), t, latents, **extra_step_kwargs).prev_sample
 
     output_image = pipes[0].decode_latents(latents)
     output_image = pipes[0].numpy_to_pil(output_image)
