@@ -2,13 +2,14 @@ import os
 from typing import Optional, Callable, Union, List
 
 import torch
+import numpy as np
 from PIL import Image
 
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.utils.torch_utils import is_compiled_module
 from diffusers.pipelines.controlnet import MultiControlNetModel
 
-from diffuser_scripts.utils import get_weighted_text_embeddings
+from diffuser_scripts.utils import get_weighted_text_embeddings, detectmap_proc
 
 
 def in_range(i, s):
@@ -79,9 +80,19 @@ def prepare_image(
     dtype,
     do_classifier_free_guidance=False,
     guess_mode=False,
+    preprocess_mode='webui'
 ):
-    image = self.control_image_processor.preprocess(image, height=height, width=width).to(dtype=torch.float32)
-    image_batch_size = image.shape[0]
+    # print(image_tensor.shape, height, width)
+    if preprocess_mode == 'webui':
+        image_tensor, image = detectmap_proc(image, height, width)
+    elif preprocess_mode == 'diffusers':
+        if not isinstance(image, Image.Image):
+            image = Image.fromarray(image)
+        print("use default preprocess")
+        image_tensor = self.control_image_processor.preprocess(image, height=height, width=width).to(dtype=torch.float32)
+    else:
+        raise ValueError
+    image_batch_size = image_tensor.shape[0]
 
     if image_batch_size == 1:
         repeat_by = batch_size
@@ -89,14 +100,14 @@ def prepare_image(
         # image batch size is the same as prompt batch size
         repeat_by = num_images_per_prompt
 
-    image = image.repeat_interleave(repeat_by, dim=0)
+    image_tensor = image_tensor.repeat_interleave(repeat_by, dim=0)
 
-    image = image.to(device=device, dtype=dtype)
+    image_tensor = image_tensor.to(device=device, dtype=dtype)
 
     if do_classifier_free_guidance and not guess_mode:
-        image = torch.cat([image] * (num_prompts + 1))
+        image_tensor = torch.cat([image_tensor] * (num_prompts + 1))
 
-    return image
+    return image_tensor
 
 
 
@@ -126,15 +137,28 @@ def latent_couple_with_control(
     control_guidance_start: Union[float, List[float]] = 0.0,
     control_guidance_end: Union[float, List[float]] = 0.5,
     controlnet_conditioning_scale = 1.0,
+    control_preprocess_mode: str = "webui",
     main_prompt_decay = 0.01,
 ):
     mask_list = make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
     prompt_embeddings = []
     for i, prompt in enumerate(prompts):
-        text_embedding, uncond_embedding = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=negative_prompts[i], )
+        text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
         prompt_embeddings.append(text_embedding)
-    prompt_embeds = prompt_embeddings
+    uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=negative_prompts[0], uncond_prompt=None, )
+    # data01 = np.load('control_999_1.npz')
+    # data02 = np.load('control_999_2.npz')
+    # data00 = np.load('control_999_0.npz')
+    # for c1 in [data00['context'][0], data00['context'][1], data01['context'][0], ]:
+    #     for c in prompt_embeddings:
+    #         c2 = c.detach().cpu().numpy()
+    #         print(np.abs(c1-c2).mean())
+    # uncond_embedding = torch.tensor(data02['context']).to(dtype=text_embedding.dtype, device=text_embedding.device)
+    # prompt_embeddings = [data00['context'][:1], data00['context'][1:], data01['context'][:1]]
+    # prompt_embeddings = [torch.tensor(t).to(dtype=text_embedding.dtype, device=text_embedding.device) for t in prompt_embeddings]            
+    prompt_embeds = torch.cat(prompt_embeddings, dim=0)
     negative_prompt_embed = uncond_embedding
+    # print(prompt_embeds.shape, negative_prompt_embed.shape)
 
     height = height or pipes[0].unet.config.sample_size * pipes[0].vae_scale_factor
     width = width or pipes[0].unet.config.sample_size * pipes[0].vae_scale_factor
@@ -153,10 +177,10 @@ def latent_couple_with_control(
         ]
         
     # 1. Check inputs. Raise error if not correct
-    pipes[0].check_inputs(None, image, callback_steps, None, prompt_embeds[0], negative_prompt_embed, controlnet_conditioning_scale, control_guidance_start, control_guidance_end)
+    # pipes[0].check_inputs(None, image, callback_steps, None, prompt_embeds[0], negative_prompt_embed, controlnet_conditioning_scale, control_guidance_start, control_guidance_end)
     
     # 2. Define call parameters
-    batch_size = prompt_embeds[0].shape[0]
+    batch_size = prompt_embeddings[0].shape[0]
     
     devices = [pipe._execution_device for pipe in pipes]
     # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
@@ -165,10 +189,10 @@ def latent_couple_with_control(
     do_classifier_free_guidance = guidance_scale > 1.0
     
     # 3. Encode input prompt
-    if prompt_embeds is not None:
-        text_embeddings = []
-        for prompt_embed in prompt_embeddings:
-            text_embeddings.append(torch.cat([negative_prompt_embed, prompt_embed], 0))    
+    # if prompt_embeds is not None:
+    #     text_embeddings = []
+    #     for prompt_embed in prompt_embeddings:
+    #         text_embeddings.append(torch.cat([negative_prompt_embed, prompt_embed], 0))    
     
     # 4. Prepare image
     if isinstance(controlnet, ControlNetModel):
@@ -184,6 +208,7 @@ def latent_couple_with_control(
             dtype=controlnet.dtype,
             do_classifier_free_guidance=do_classifier_free_guidance,
             guess_mode=guess_mode,
+            preprocess_mode=control_preprocess_mode
         )
         # height, width = image.shape[-2:]
     elif isinstance(controlnet, MultiControlNetModel):
@@ -201,6 +226,7 @@ def latent_couple_with_control(
                 dtype=controlnet.dtype,
                 do_classifier_free_guidance=do_classifier_free_guidance,
                 guess_mode=guess_mode,
+                preprocess_mode=control_preprocess_mode
             )
     
             images.append(image_)
@@ -224,7 +250,7 @@ def latent_couple_with_control(
         num_channels_latents,
         height,
         width,
-        text_embeddings[0].dtype,
+        prompt_embeds[0].dtype,
         devices[0],
         generator,
         latents,
@@ -250,72 +276,68 @@ def latent_couple_with_control(
     # num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
     for i, t in pipes[0].progress_bar(enumerate(timesteps)):
         # expand the latents if we are doing classifier free guidance
-        latent_model_input = torch.cat([latents] * (len(text_embeddings) + 1)) if do_classifier_free_guidance else latents
+        latent_model_input = torch.cat([latents] * (len(prompt_embeds) + 1)) if do_classifier_free_guidance else latents
         latent_model_input = pipes[0].scheduler.scale_model_input(latent_model_input, t)
     
         # predict the noise residual, with control net
-        noise_preds = []                
-        controlnet_prompt_embeds = []
-        for idx in range(len(prompts)):
-            # controlnet(s) inference
-            if guess_mode and do_classifier_free_guidance:
-                # Infer ControlNet only for the conditional batch.
-                control_model_input = latents
-                control_model_input = pipes[0].scheduler.scale_model_input(control_model_input, t)
-                controlnet_prompt_embeds = text_embeddings[idx].chunk(2)[1]
+        noise_preds = []
+
+        if controlnet_keep[i] > 0:                
+            if isinstance(controlnet_keep[i], list):
+                cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
             else:
-                control_model_input = latent_model_input
-                controlnet_prompt_embeds.append(text_embeddings[idx].chunk(2)[1])
-            # control_model_input = latents
-            # controlnet_prompt_embeds = text_embeddings[idx][0:1]
-    
-        #inference negative prompt
-        controlnet_prompt_embeds.append(text_embeddings[0].chunk(2)[0])
-        controlnet_prompt_embeds = torch.cat(controlnet_prompt_embeds)
-        
-        if isinstance(controlnet_keep[i], list):
-            cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
-        else:
-            cond_scale = controlnet_conditioning_scale * controlnet_keep[i]
+                cond_scale = controlnet_conditioning_scale * controlnet_keep[i]
 
-        # print(control_model_input.shape, controlnet_prompt_embeds.shape, image.shape)
-        down_block_res_samples, mid_block_res_sample = pipes[0].controlnet(
-            control_model_input,
-            t,
-            encoder_hidden_states=controlnet_prompt_embeds,
-            controlnet_cond=image,
-            conditioning_scale=cond_scale,
-            guess_mode=guess_mode,
-            return_dict=False,
-        )
-        down_block_res_samples = [ds * s for ds, s in zip(down_block_res_samples, controlnet_scales)]
-        mid_block_res_sample = mid_block_res_sample * controlnet_scales[-1]
+            down_block_res_samples, mid_block_res_sample = controlnet(
+                latent_model_input[:3],
+                t,
+                encoder_hidden_states=prompt_embeds,
+                controlnet_cond=image[:3],
+                conditioning_scale=cond_scale,
+                guess_mode=guess_mode,
+                return_dict=False,
+            )
+            down_block_res_samples_neg, mid_block_res_sample_neg = controlnet(
+                latent_model_input[:1],
+                t,
+                encoder_hidden_states=negative_prompt_embed,
+                controlnet_cond=image[:1],
+                conditioning_scale=cond_scale,
+                guess_mode=guess_mode,
+                return_dict=False,
+            )
+            down_block_res_samples = [ds * s for ds, s in zip(down_block_res_samples, controlnet_scales)]
+            mid_block_res_sample = mid_block_res_sample * controlnet_scales[-1]
+            down_block_res_samples_neg = [ds * s for ds, s in zip(down_block_res_samples_neg, controlnet_scales)]
+            mid_block_res_sample_neg = mid_block_res_sample_neg * controlnet_scales[-1]
 
-        down_block_res_samples_list, mid_block_res_sample_list = [], []
-        for j in range(len(text_embeddings)):
-            down_block_res_samples_list.append([torch.stack([d[-1], d[j]], dim=0) for d in down_block_res_samples])
-            mid_block_res_sample_list.append(torch.stack([mid_block_res_sample[-1], mid_block_res_sample[j]], dim=0))
-    
-        if guess_mode and do_classifier_free_guidance:
-            # Infered ControlNet only for the conditional batch.
-            # To apply the output of ControlNet to both the unconditional and conditional batches,
-            # add 0 to the unconditional batch to keep it unchanged.
-            down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-            mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+            # down_block_res_samples_list, mid_block_res_sample_list = [], []
+            # for j in range(len(prompt_embeddings)):
+            #     down_block_res_samples_list.append([torch.stack([down_block_res_samples_neg[k][0], d[j]], dim=0) for k, d in enumerate(down_block_res_samples)])
+            #     mid_block_res_sample_list.append(torch.stack([mid_block_res_sample_neg[0], mid_block_res_sample[j]], dim=0))
 
         latent_couple = 0
-        for j, (embed, ds, m) in enumerate(zip(text_embeddings, down_block_res_samples_list, mid_block_res_sample_list)):
+        for j, embed in enumerate(prompt_embeddings):
             # print(embed.shape, latent_model_input.shape, t, m.shape)
-            noise_pred = pipes[j].unet(
-                latent_model_input[:2], 
+            noise_pred_text = pipes[j].unet(
+                latent_model_input[j:j+1], 
                 t,
                 encoder_hidden_states=embed,
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=ds,
-                mid_block_additional_residual=m,
+                down_block_additional_residuals=[d[j:j+1] for d in down_block_res_samples],
+                mid_block_additional_residual=mid_block_res_sample[j:j+1],
                 return_dict=False,                        
             )[0]
-            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+            noise_pred_uncond = pipes[j].unet(
+                latent_model_input[-1:], 
+                t,
+                encoder_hidden_states=negative_prompt_embed,
+                cross_attention_kwargs=cross_attention_kwargs,
+                down_block_additional_residuals=down_block_res_samples_neg,
+                mid_block_additional_residual=mid_block_res_sample_neg,
+                return_dict=False,                        
+            )[0]
+            # noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
             this_mask =  torch.where(
                 mask_list[j] > 0, 
@@ -325,7 +347,7 @@ def latent_couple_with_control(
             # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
             latent_couple += noise_pred.to(dtype=this_mask.dtype) * this_mask
         latents = pipes[0].scheduler.step(latent_couple.to(dtype=noise_pred.dtype), t, latents, **extra_step_kwargs).prev_sample
-
+    torch.cuda.empty_cache()
     output_image = pipes[0].decode_latents(latents)
     output_image = pipes[0].numpy_to_pil(output_image)
     return output_image[0]

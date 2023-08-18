@@ -69,15 +69,19 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
 
     condition_img_str: str = None
     control_model_name: str = 'lllyasviel/control_v11p_sd15_canny'
-    control_mode: str = 'balance' # [prompt, balance, control] as in webui
+    control_mode: str = 'prompt' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
+    control_preprocess_mode: str = "diffuser"
 
     @property
     def condition_image(self):
-        return Image.fromarray(decode_image_b64(self.condition_img_str))
+        return Image.fromarray(self.condition_image_np)
 
+    @property
+    def condition_image_np(self):
+        return decode_image_b64(self.condition_img_str)
 
 @dataclass
 class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):

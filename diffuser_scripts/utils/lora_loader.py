@@ -3,6 +3,8 @@ from collections import defaultdict
 import torch
 from safetensors.torch import load_file
 
+from .logger import logger
+
 
 class LoraLoader:
     """
@@ -51,13 +53,14 @@ class LoraLoader:
                     if len(layer_infos) > 0:
                         temp_name = layer_infos.pop(0)
                     elif len(layer_infos) == 0:
-                        # print("find", curr_layer)
                         break
                 except Exception:
                     if len(temp_name) > 0:
                         temp_name += "_" + layer_infos.pop(0)
                     else:
                         temp_name = layer_infos.pop(0)
+            else:
+                print("layer %s not found" % layer)
 
             # get elements for this layer
             weight_up = elems['lora_up.weight'].to(dtype)
