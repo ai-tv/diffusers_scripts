@@ -73,7 +73,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
-    control_preprocess_mode: str = "diffuser"
+    control_preprocess_mode: str = "webui"
 
     @property
     def condition_image(self):
