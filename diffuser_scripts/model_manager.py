@@ -1,4 +1,5 @@
 import os
+import copy
 import json
 import collections
 import typing as T
@@ -33,7 +34,24 @@ class LatentCoupleConfig:
     @staticmethod
     def from_json(json_path):
         obj = json.load(open(json_path))
-        return LatentCoupleConfig(**obj)    
+        return LatentCoupleConfig(**obj)
+
+
+def retry(func, max_trial=-1):
+    count = 0
+    def _func(*args, **kw):
+        nonlocal count
+        try:
+            return func(*args, **kw)    
+        except Exception as e:
+            if count == max_trial:
+                raise e
+            else:
+                print(e)
+                count += 1
+                return _func(*args, **kw) 
+    return _func
+
 
 
 def load_latent_couple_pipeline(
@@ -42,7 +60,7 @@ def load_latent_couple_pipeline(
 ):
     config = latent_couple_config
     if config.use_controlnet:
-        control_model = ControlNetModel.from_pretrained(
+        control_model = retry(ControlNetModel.from_pretrained)(
             config.default_controlnet_name, torch_dtype=torch.float16)
 
     load_method = {
@@ -82,7 +100,7 @@ def load_latent_couple_pipeline(
             vae = main_pipe.vae,
             unet = unet,
             controlnet = control_model,
-            scheduler = scheduler,
+            scheduler = copy.deepcopy(scheduler),
             safety_checker = None,
             feature_extractor = None,
             requires_safety_checker = False
