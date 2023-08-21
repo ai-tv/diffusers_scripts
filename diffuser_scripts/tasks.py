@@ -95,6 +95,8 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     latent_mask_weight_decay: T.List[float] = 0.03
     latent_pos: T.List[str] = None
     latent_mask: T.List[str] = None
+    latent_couple_min_ratio: float = 0.1
+    latent_couple_max_ratio: float = 0.9
 
     @property
     def json(self):

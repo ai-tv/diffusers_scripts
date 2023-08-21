@@ -139,15 +139,22 @@ def latent_couple_with_control(
     controlnet_conditioning_scale = 1.0,
     control_preprocess_mode: str = "webui",
     main_prompt_decay = 0.01,
+    latent_couple_min_ratio: float = 0.1,
+    latent_couple_max_ratio: float = 0.9
 ):
     mask_list = make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
     prompt_embeddings = []
+    negative_prompt_embeds = []
     from diffuser_scripts.prompts.text_embedding import get_text_encoder
     embedder = get_text_encoder(pipes[0].text_encoder, pipes[0].tokenizer)
     for i, prompt in enumerate(prompts):
-        text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        # text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        text_embedding = embedder([prompt]).to(torch.float16)
         prompt_embeddings.append(text_embedding)
-    uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=negative_prompts[0], uncond_prompt=None, )
+    for i, prompt in enumerate(negative_prompts):
+        uncond_embedding = embedder([prompt]).to(torch.float16)
+        # uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        negative_prompt_embeds.append(uncond_embedding)
     # data01 = np.load('control_999_1.npz')
     # data02 = np.load('control_999_2.npz')
     # data00 = np.load('control_999_0.npz')
@@ -159,7 +166,7 @@ def latent_couple_with_control(
     # prompt_embeddings = [data00['context'][:1], data00['context'][1:], data01['context'][:1]]
     # prompt_embeddings = [torch.tensor(t).to(dtype=text_embedding.dtype, device=text_embedding.device) for t in prompt_embeddings]            
     prompt_embeds = torch.cat(prompt_embeddings, dim=0)
-    negative_prompt_embed = uncond_embedding
+    negative_prompt_embeds = torch.cat(negative_prompt_embeds, dim=0)
     # print(prompt_embeds.shape, negative_prompt_embed.shape)
 
     height = height or pipes[0].unet.config.sample_size * pipes[0].vae_scale_factor
@@ -241,7 +248,7 @@ def latent_couple_with_control(
     # 5. Prepare timesteps
     timesteps_list = []
     for pipe in pipes:
-        pipe.scheduler.set_timesteps(num_inference_steps-1, device=pipes[0].device)
+        pipe.scheduler.set_timesteps(num_inference_steps, device=pipes[0].device)
         timesteps = pipe.scheduler.timesteps
         timesteps_list.append(timesteps)
     
@@ -270,7 +277,7 @@ def latent_couple_with_control(
         ]
         controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
     if control_mode == 'prompt':
-        controlnet_scales = [controlnet_conditioning_scale * (0.825 ** float(12 - i)) for i in range(13)]    
+        controlnet_scales = [controlnet_conditioning_scale * (0.825 ** float(13 - i)) for i in range(13)]    
     else:
         controlnet_scales = [1 for _ in range(13)]
     
@@ -302,7 +309,7 @@ def latent_couple_with_control(
             down_block_res_samples_neg, mid_block_res_sample_neg = controlnet(
                 latent_model_input[:1],
                 t,
-                encoder_hidden_states=negative_prompt_embed,
+                encoder_hidden_states=negative_prompt_embeds[:1],
                 controlnet_cond=image[:1],
                 conditioning_scale=cond_scale,
                 guess_mode=guess_mode,
@@ -326,24 +333,24 @@ def latent_couple_with_control(
                 t,
                 encoder_hidden_states=embed,
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=[d[j:j+1] for d in down_block_res_samples],
-                mid_block_additional_residual=mid_block_res_sample[j:j+1],
+                down_block_additional_residuals=[d[j:j+1] for d in down_block_res_samples] if controlnet_keep[i] > 0 else None,
+                mid_block_additional_residual=mid_block_res_sample[j:j+1] if controlnet_keep[i] > 0 else None,
                 return_dict=False,                        
             )[0]
             noise_pred_uncond = pipes[j].unet(
-                latent_model_input[-1:], 
+                latent_model_input[j:j+1], 
                 t,
-                encoder_hidden_states=negative_prompt_embed,
+                encoder_hidden_states=negative_prompt_embeds[j:j+1],
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples_neg,
-                mid_block_additional_residual=mid_block_res_sample_neg,
+                down_block_additional_residuals=[d for d in down_block_res_samples_neg] if controlnet_keep[i] > 0 else None,
+                mid_block_additional_residual=mid_block_res_sample_neg if controlnet_keep[i] > 0 else None,
                 return_dict=False,                        
-            )[0]
+            )[0] # if j == 0 else noise_pred_uncond
             # noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
             this_mask =  torch.where(
                 mask_list[j] > 0, 
-                torch.clip(mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), 0.1, 0.9), 
+                torch.clip(mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), latent_couple_min_ratio, latent_couple_max_ratio), 
                 mask_list[j]
             )
             # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
