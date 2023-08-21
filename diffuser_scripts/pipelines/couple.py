@@ -142,6 +142,8 @@ def latent_couple_with_control(
 ):
     mask_list = make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
     prompt_embeddings = []
+    from diffuser_scripts.prompts.text_embedding import get_text_encoder
+    embedder = get_text_encoder(pipes[0].text_encoder, pipes[0].tokenizer)
     for i, prompt in enumerate(prompts):
         text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
         prompt_embeddings.append(text_embedding)
