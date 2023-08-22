@@ -26,11 +26,11 @@ def get_lora_path(name):
     for lora_config in model_config['loras']:
         lora_prefix = lora_config['prefix']
         lora_suffix = lora_config['suffix']
-        lora_path = f'{lora_prefix}/{name}.{suffix}'.format()
+        lora_path = f'{lora_prefix}/{name}{lora_suffix}'.format()
         if os.path.exists(lora_path):
             return lora_path
     else:
-        raise ValueError
+        raise ValueError("%s cannot be found under config %s" % (name, model_config['loras']))
 
 
 
@@ -40,7 +40,7 @@ async def handle_latent_couple (request: Request):
     params = LatentCoupleWithControlTaskParams(**data)
     logger.info("got request, %s" % (params.prompt, ))
     control_image = params.condition_image_np
-    lora_configs = [{os.path.join('/mnt/2T/zwshi/model_zoo/%s.safetensors' % k): v for k, v in config.items()} for config in params.lora_configs]
+    lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.lora_configs]
     params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
 
     dump_request_to_file(params, 'log')
