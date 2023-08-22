@@ -22,12 +22,24 @@ if os.path.exists(default_model_path):
 model_manager = LatentCouplePipelinesManager(config=pipelin_config, model_config=model_config)
 
 
+def get_lora_path(name):
+    for lora_config in model_config['loras']:
+        lora_prefix = lora_config['prefix']
+        lora_suffix = lora_config['suffix']
+        lora_path = f'{lora_prefix}/{name}.{suffix}'.format()
+        if os.path.exists(lora_path):
+            return lora_path
+    else:
+        raise ValueError
+
+
+
 @app.post("/get_latent_couple")
 async def handle_latent_couple (request: Request):
     data = await request.json()
     params = LatentCoupleWithControlTaskParams(**data)
     logger.info("got request, %s" % (params.prompt, ))
-    control_image = params.condition_image
+    control_image = params.condition_image_np
     lora_configs = [{os.path.join('/mnt/2T/zwshi/model_zoo/%s.safetensors' % k): v for k, v in config.items()} for config in params.lora_configs]
     params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
 

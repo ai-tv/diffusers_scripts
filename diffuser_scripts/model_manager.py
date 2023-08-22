@@ -15,15 +15,6 @@ from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDESchedu
 from diffuser_scripts.utils.lora_loader import LoraLoader
 
 
-default_model_infos = {
-    'chilloutmix': {
-        'load_method': 'pretrained',
-        'local_path': '/home/zwshi/.cache/huggingface/hub/models--emilianJR--chilloutmix_NiPrunedFp32Fix/snapshots/4688d3087e95035d798c2b65cc89eeefcb042906/',
-        'path': 'emilianJR/chilloutmix_NiPrunedFp32Fix'
-    },
-}
-
-
 @dataclass
 class LatentCoupleConfig:
 
@@ -34,6 +25,9 @@ class LatentCoupleConfig:
     @staticmethod
     def from_json(json_path):
         obj = json.load(open(json_path))
+        for k in list(obj.keys()):
+            if k.startswith('_'):
+                del obj[k]
         return LatentCoupleConfig(**obj)
 
 
@@ -56,7 +50,7 @@ def retry(func, max_trial=-1):
 
 def load_latent_couple_pipeline(
     latent_couple_config: LatentCoupleConfig,
-    model_infos: T.Dict = default_model_infos
+    model_infos: T.Dict
 ):
     config = latent_couple_config
     if config.use_controlnet:
@@ -68,7 +62,7 @@ def load_latent_couple_pipeline(
         'single_file': StableDiffusionPipeline.from_single_file
     }
 
-    model_info = model_infos[config.model_names[0]]
+    model_info = model_infos['base_models'][config.model_names[0]]
     main_pipe = load_method[model_info['load_method']](
         model_info['local_path'],
         torch_dtype=torch.float16,
@@ -85,7 +79,7 @@ def load_latent_couple_pipeline(
             unet = main_pipe.unet
             text_encoder = main_pipe.text_encoder
         else:
-            model_info = model_infos[name]
+            model_info = model_infos['base_models'][name]
             text_encoder = CLIPTextModel.from_pretrained(
                 os.path.join(model_info['local_path'], 'text_encoder'),
                 torch_dtype=torch.float16,
@@ -114,7 +108,7 @@ def load_latent_couple_pipeline(
 
 class LatentCouplePipelinesManager:
 
-    def __init__(self, config: LatentCoupleConfig, model_config = default_model_infos):
+    def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
         self.pipelines = load_latent_couple_pipeline(config, model_config)
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
