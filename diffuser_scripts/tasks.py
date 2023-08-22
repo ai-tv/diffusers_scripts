@@ -1,5 +1,6 @@
 """ data structure for generation tasks """
 
+import json
 import typing as T
 from dataclasses import dataclass, asdict
 
@@ -102,6 +103,12 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     def json(self):
         return asdict(self)
 
+    @staticmethod
+    def from_json(obj):
+        if isinstance(obj, str):
+            with open(obj) as f:
+                obj = json.load(f)
+        return LatentCoupleWithControlTaskParams(**obj)
 
 
 @dataclass
