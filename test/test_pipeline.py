@@ -18,7 +18,8 @@ from diffuser_scripts.pipelines.couple import latent_couple_with_control
 def test_pipeline(random_seed=0, output_name=""):
     import cv2
     # image = np.array(Image.open("images/lc_ball_canny_2.png"))[..., None]
-    image = np.array(Image.open("image.png"))[..., None]
+    image = np.array(Image.open("images/image.png"))[..., None]
+    # image[:] = 0
     # image = np.array(Image.open("images/lc_test_canny.png"))
     # print(image.shape)
     # image = np.array(Image.open("ball_canny.png"))[..., None]
@@ -40,13 +41,18 @@ def test_pipeline(random_seed=0, output_name=""):
         "base_model": ['chilloutmix', 'chilloutmix', 'chilloutmix'],
         "width": 1024,
         "height": 768,
+        # "lora_configs": [
+        #     {"couple_0614_001-000001": 0},
+        #     {"exp0814_baijingting_single-000005": 1},
+        #     {"exp0811_yangmi_single-000001": 1}
+        # ], 
         "lora_configs": [
             {"couple_0614_001-000001": 1},
             {"couple_0614_001-000001": 1},
             {"couple_0614_001-000001": 1}
         ],
         "condition_img_str": encode_image_b64(image),
-        "control_guidance_scale": 1.0,
+        "control_guidance_scale": 0.8,
         "control_guidance_end": 0.5,
         "latent_mask_weight": [0.7, 0.3, 0.3],
         "latent_pos": ["1:1-0:0","1:32-0:0-14","1:32-0:14-32"],
@@ -54,7 +60,8 @@ def test_pipeline(random_seed=0, output_name=""):
         "random_seed": random_seed,
         "latent_mask_weight_decay": 0.03,
         "control_mode": "prompt",
-        "control_preprocess_mode": "webui"
+        "control_preprocess_mode": "webui",
+        "num_inference_steps": 30
     }
     # data = {
     #     'prompt': [
