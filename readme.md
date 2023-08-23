@@ -1,8 +1,10 @@
 ## Usage
 
 ### install
-`pip install -r requirements.txt`
-`pip install -e . `
+```
+pip install -r requirements.txt
+pip install -e . 
+```
 (Not actually tested, #TODO ensure)
 
 ### start server
@@ -38,6 +40,8 @@ def test_post_app():
             'ouyangnana',
         ],
         "negative_prompt": [
+            'paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ... ... ,(nsfw:1.5), (sexy)',
+            'paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ... ... ,(nsfw:1.5), (sexy)',
             'paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ... ... ,(nsfw:1.5), (sexy)',
         ],
         "base_model": ['chilloutmix', 'chilloutmix', 'chilloutmix'],
