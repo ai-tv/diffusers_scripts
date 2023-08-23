@@ -18,8 +18,10 @@ from diffuser_scripts.utils.lora_loader import LoraLoader
 @dataclass
 class LatentCoupleConfig:
 
-    model_names: T.List 
+    model_names: T.List
+    use_id_mlp: bool = False
     use_controlnet: bool = True
+    default_id_mlp: str = None
     default_controlnet_name: str = 'lllyasviel/control_v11p_sd15_canny'
 
     @staticmethod
@@ -70,6 +72,7 @@ def load_latent_couple_pipeline(
         local_files_only=True,
         safety_checker = None
     )
+        
     scheduler = DPMSolverMultistepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     scheduler.config.algorithm_type = 'sde-dpmsolver++'
     # scheduler = DPMSolverSinglestepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
@@ -100,6 +103,9 @@ def load_latent_couple_pipeline(
             requires_safety_checker = False
         )
         pipe.to('cuda')
+        if i == 0 and config.use_id_mlp:
+            from diffuser_scripts.net.id_mlp import ResMlp
+            pipe.id_mlp = torch.load(config.default_id_mlp).cuda().eval()
         pipes.append(pipe)
     
     del main_pipe
@@ -113,6 +119,19 @@ class LatentCouplePipelinesManager:
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
         self.lock = Lock()
+
+    def get_sd(self, i=0):
+        p = self.pipelines[i]
+        return StableDiffusionPipeline(
+            vae = p.vae,
+            text_encoder = p.text_encoder,
+            tokenizer = p.tokenizer,
+            unet = p.unet,
+            scheduler = p.scheduler,
+            safety_checker = p.safety_checker,
+            feature_extractor = p.feature_extractor,
+            requires_safety_checker = p.requires_safety_checker
+        ).to(p.device)
 
     def change_controlnet(self, controlnet_path):
         control_model = ControlNetModel.from_pretrained(controlnet_path, torch_dtype=torch.float16)

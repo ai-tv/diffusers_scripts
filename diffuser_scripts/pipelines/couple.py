@@ -9,8 +9,8 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.utils.torch_utils import is_compiled_module
 from diffusers.pipelines.controlnet import MultiControlNetModel
 
-from diffuser_scripts.utils import get_weighted_text_embeddings, detectmap_proc
-
+from diffuser_scripts.utils import detectmap_proc
+from diffuser_scripts.utils.long_prompt_weighting import get_weighted_text_embeddings
 
 def in_range(i, s):
     if '-' in s:
@@ -121,6 +121,7 @@ def latent_couple_with_control(
     negative_prompts = None,
     height: int = None,
     width: int = None,
+    id_features: np.ndarray = None,
     output_type: Optional[str] = "pil",
     return_dict: bool = True,
     callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
@@ -146,14 +147,18 @@ def latent_couple_with_control(
     prompt_embeddings = []
     negative_prompt_embeds = []
     from diffuser_scripts.prompts.text_embedding import get_text_encoder
-    embedder = get_text_encoder(pipes[0].text_encoder, pipes[0].tokenizer)
+    # embedder = get_text_encoder(pipes[0].text_encoder, pipes[0].tokenizer)
     for i, prompt in enumerate(prompts):
-        # text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
-        text_embedding = embedder([prompt]).to(torch.float16)
+        text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        if id_features is not None:
+            text_embedding = torch.cat([id_features[i][None, ], text_embedding, ], dim=1).to(torch.float16)
+        # text_embedding = embedder([prompt]).to(torch.float16)
         prompt_embeddings.append(text_embedding)
     for i, prompt in enumerate(negative_prompts):
-        uncond_embedding = embedder([prompt]).to(torch.float16)
-        # uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        # uncond_embedding = embedder([prompt]).to(torch.float16)
+        uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
+        if id_features is not None:
+            uncond_embedding = torch.cat([id_features[i][None, ], uncond_embedding], dim=1).to(torch.float16)
         negative_prompt_embeds.append(uncond_embedding)
     # data01 = np.load('control_999_1.npz')
     # data02 = np.load('control_999_2.npz')
@@ -167,7 +172,14 @@ def latent_couple_with_control(
     # prompt_embeddings = [torch.tensor(t).to(dtype=text_embedding.dtype, device=text_embedding.device) for t in prompt_embeddings]            
     prompt_embeds = torch.cat(prompt_embeddings, dim=0)
     negative_prompt_embeds = torch.cat(negative_prompt_embeds, dim=0)
-    # print(prompt_embeds.shape, negative_prompt_embed.shape)
+    # if id_features is not None:
+    #     # id_features = torch.FloatTensor(id_features).to(pipes[0].device)
+    #     # id_features = pipes[0].id_mlp(id_features)
+    #     pos_cat = torch.stack([id_features for _ in range(prompt_embeds.shape[0])], axis=0)
+    #     neg_cat = torch.stack([id_features for _ in range(negative_prompt_embeds.shape[0])], axis=0)
+    #     prompt_embeds = torch.cat([pos_cat, prompt_embeds], dim=1).to(torch.float16)
+    #     negative_prompt_embeds = torch.cat([neg_cat, negative_prompt_embeds], dim=1).to(torch.float16)
+    # print(prompt_embeds.shape, negative_prompt_embeds.shape)
 
     height = height or pipes[0].unet.config.sample_size * pipes[0].vae_scale_factor
     width = width or pipes[0].unet.config.sample_size * pipes[0].vae_scale_factor
@@ -356,7 +368,6 @@ def latent_couple_with_control(
             # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
             latent_couple += noise_pred.to(dtype=this_mask.dtype) * this_mask
         latents = pipes[0].scheduler.step(latent_couple.to(dtype=noise_pred.dtype), t, latents, **extra_step_kwargs).prev_sample
-    torch.cuda.empty_cache()
     output_image = pipes[0].decode_latents(latents)
     output_image = pipes[0].numpy_to_pil(output_image)
     return output_image[0]
