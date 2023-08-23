@@ -20,22 +20,16 @@ from diffuser_scripts.pipelines.couple import latent_couple_with_control
 def test_pipeline(output_name="default", random_seed=0):
     os.makedirs('test_result/%s' % output_name, exist_ok=True)
     default_model_path = "configs/default_model_infos.json"
-    default_pipeline_path = "configs/latent_couple_config.json"
+    default_pipeline_path = "configs/latent_couple_config_canny02.json"
     pipelin_config = LatentCoupleConfig.from_json(default_pipeline_path)
     if os.path.exists(default_model_path):
         model_config = json.load(open(default_model_path))
     model_manager = LatentCouplePipelinesManager(config=pipelin_config, model_config=model_config)
 
     lora_configs = [
-        {
-            "0807_oynn_bjt_autotag-000001": 1
-        },
-        {
-            "0807_oynn_bjt_autotag-000001": 1
-        },
-        {
-            "0807_oynn_bjt_autotag-000001": 1
-        }
+        {"couple_0614_001-000001": 1},
+        {"couple_0614_001-000001": 1},
+        {"couple_0614_001-000001": 1}
     ]
     lora_configs = [{os.path.join('/mnt/2T/zwshi/model_zoo/%s.safetensors' % k): v for k, v in config.items()} for config in lora_configs]
     model_manager.load_loras(lora_configs)
