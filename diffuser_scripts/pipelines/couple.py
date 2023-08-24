@@ -289,7 +289,7 @@ def latent_couple_with_control(
         ]
         controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
     if control_mode == 'prompt':
-        controlnet_scales = [controlnet_conditioning_scale * (0.825 ** float(13 - i)) for i in range(13)]    
+        controlnet_scales = [(0.825 ** float(13 - i)) for i in range(13)]    
     else:
         controlnet_scales = [1 for _ in range(13)]
     
@@ -303,7 +303,8 @@ def latent_couple_with_control(
         # predict the noise residual, with control net
         noise_preds = []
 
-        if controlnet_keep[i] > 0:                
+        if isinstance(controlnet, ControlNetModel) and controlnet_keep[i] > 0 or (
+            not isinstance(controlnet, ControlNetModel) and controlnet_keep[i][0] > 0):
             if isinstance(controlnet_keep[i], list):
                 cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
             else:
@@ -313,7 +314,7 @@ def latent_couple_with_control(
                 latent_model_input[:3],
                 t,
                 encoder_hidden_states=prompt_embeds,
-                controlnet_cond=image[:3],
+                controlnet_cond=image[:3] if isinstance(controlnet, ControlNetModel) else [image_[:3] for image_ in images],
                 conditioning_scale=cond_scale,
                 guess_mode=guess_mode,
                 return_dict=False,
@@ -322,7 +323,7 @@ def latent_couple_with_control(
                 latent_model_input[:1],
                 t,
                 encoder_hidden_states=negative_prompt_embeds[:1],
-                controlnet_cond=image[:1],
+                controlnet_cond=image[:1] if isinstance(controlnet, ControlNetModel) else [image_[:1] for image_ in images],
                 conditioning_scale=cond_scale,
                 guess_mode=guess_mode,
                 return_dict=False,
@@ -336,6 +337,9 @@ def latent_couple_with_control(
             # for j in range(len(prompt_embeddings)):
             #     down_block_res_samples_list.append([torch.stack([down_block_res_samples_neg[k][0], d[j]], dim=0) for k, d in enumerate(down_block_res_samples)])
             #     mid_block_res_sample_list.append(torch.stack([mid_block_res_sample_neg[0], mid_block_res_sample[j]], dim=0))
+            use_controlnet = True
+        else:
+            use_controlnet = False
 
         latent_couple = 0
         for j, embed in enumerate(prompt_embeddings):
@@ -345,8 +349,8 @@ def latent_couple_with_control(
                 t,
                 encoder_hidden_states=embed,
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=[d[j:j+1] for d in down_block_res_samples] if controlnet_keep[i] > 0 else None,
-                mid_block_additional_residual=mid_block_res_sample[j:j+1] if controlnet_keep[i] > 0 else None,
+                down_block_additional_residuals=[d[j:j+1] for d in down_block_res_samples] if use_controlnet else None,
+                mid_block_additional_residual=mid_block_res_sample[j:j+1] if use_controlnet else None,
                 return_dict=False,                        
             )[0]
             noise_pred_uncond = pipes[j].unet(
@@ -354,8 +358,8 @@ def latent_couple_with_control(
                 t,
                 encoder_hidden_states=negative_prompt_embeds[j:j+1],
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=[d for d in down_block_res_samples_neg] if controlnet_keep[i] > 0 else None,
-                mid_block_additional_residual=mid_block_res_sample_neg if controlnet_keep[i] > 0 else None,
+                down_block_additional_residuals=[d for d in down_block_res_samples_neg] if use_controlnet else None,
+                mid_block_additional_residual=mid_block_res_sample_neg if use_controlnet else None,
                 return_dict=False,                        
             )[0] # if j == 0 else noise_pred_uncond
             # noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)

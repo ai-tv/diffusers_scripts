@@ -10,9 +10,11 @@ import torch
 from transformers import CLIPTextModel
 from diffusers import UNet2DConditionModel
 from diffusers import StableDiffusionPipeline, StableDiffusionControlNetPipeline, ControlNetModel
+from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDEScheduler, DPMSolverSinglestepScheduler
 
 from diffuser_scripts.utils.lora_loader import LoraLoader
+from diffuser_scripts.utils.logger import logger
 
 
 @dataclass
@@ -56,6 +58,7 @@ def load_latent_couple_pipeline(
 ):
     config = latent_couple_config
     if config.use_controlnet:
+        logger.info("loading controlnet ...")
         control_model = retry(ControlNetModel.from_pretrained)(
             config.default_controlnet_name, torch_dtype=torch.float16)
 
@@ -65,6 +68,8 @@ def load_latent_couple_pipeline(
     }
 
     model_info = model_infos['base_models'][config.model_names[0]]
+
+    logger.info("loading main pipe ...")
     main_pipe = load_method[model_info['load_method']](
         model_info['local_path'],
         torch_dtype=torch.float16,
@@ -78,6 +83,7 @@ def load_latent_couple_pipeline(
     # scheduler = DPMSolverSinglestepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     pipes = []
     for i, name in enumerate(config.model_names):
+        logger.info("setting pipe %d" % (i, ))
         if i == 0:
             unet = main_pipe.unet
             text_encoder = main_pipe.text_encoder
@@ -133,8 +139,17 @@ class LatentCouplePipelinesManager:
             requires_safety_checker = p.requires_safety_checker
         ).to(p.device)
 
-    def change_controlnet(self, controlnet_path):
-        control_model = ControlNetModel.from_pretrained(controlnet_path, torch_dtype=torch.float16)
+    def set_controlnet(self, controlnet_path: T.Union[str, list]):
+        logger.info("setting controlnet as %s ... " % (controlnet_path, ))
+        if isinstance(controlnet_path, str):
+            control_model = retry(ControlNetModel.from_pretrained)(controlnet_path, torch_dtype=torch.float16)
+        else:
+            multicontrol = []
+            for path in controlnet_path:
+                control_model = retry(ControlNetModel.from_pretrained)(path, torch_dtype=torch.float16)
+                multicontrol.append(control_model)
+            control_model = MultiControlNetModel(multicontrol)
+        control_model.to(self.pipelines[0].device)
         for pipe in self.pipelines:
             pipe.controlnet = control_model
 
