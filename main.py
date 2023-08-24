@@ -13,6 +13,7 @@ from diffuser_scripts.pipelines.couple import latent_couple_with_control
 from diffuser_scripts.tasks import LatentCoupleWithControlTaskParams, ImageGenerationResult
 
 
+log_dir = 'log'
 app = FastAPI()
 default_model_path = "configs/default_model_infos.json"
 default_pipeline_path = "configs/latent_couple_config.json"
@@ -33,18 +34,38 @@ def get_lora_path(name):
         raise ValueError("%s cannot be found under config %s" % (name, model_config['loras']))
 
 
+def get_control_images(params):
+    image = params.condition_image_np
+    annotators = model_manager.annotators
+    annotator_names = params.control_annotators
+    if params.control_image_type == 'processed':
+        control_image = image
+        dump_image_to_dir(control_image, log_dir, name='condition')
+    elif params.control_image_type == 'original':
+        if isinstance(annotator_names, str):
+            control_image = annotators[annotator_names](image)
+            dump_image_to_dir(control_image, log_dir, name='condition')
+        elif isinstance(annotator_names, list):
+            control_image = [annotators[n](image) for n in annotator_names]
+            for c in control_image:
+                dump_image_to_dir(c, log_dir, name='condition')
+        else:
+            raise ValueError(f"bad value for annotator={annotator_names} or control_type={params.control_image_type}")
+    else:
+        raise ValueError(f"bad value for annotator={annotator_names} or control_type={params.control_image_type}")
+    return control_image
+
 
 @app.post("/get_latent_couple")
 async def handle_latent_couple (request: Request):
     data = await request.json()
     params = LatentCoupleWithControlTaskParams(**data)
     logger.info("got request, %s" % (params.prompt, ))
-    control_image = params.condition_image_np
     lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.lora_configs]
     params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
-
     dump_request_to_file(params, 'log')
-    dump_image_to_dir(control_image, 'log', name='condition')
+    control_image = get_control_images(params)
+
     if len(params.prompt) != len(model_manager.pipelines) or len(params.negative_prompt) != len(model_manager.pipelines):
         raise HTTPException(status_code=400, detail="prompt or negative prompt must be a list of %d" % (len(model_manager.pipelines), ))
 
@@ -52,6 +73,7 @@ async def handle_latent_couple (request: Request):
         try:
             logger.info("loading loras: %s" % lora_configs, )
             model_manager.load_loras(lora_configs)
+            model_manager.set_controlnet(controlnet_path=params.control_model_name)
             result = latent_couple_with_control(
                 pipes = model_manager.pipelines,
                 prompts = params.prompt,
@@ -69,7 +91,8 @@ async def handle_latent_couple (request: Request):
                 controlnet_conditioning_scale = params.control_guidance_scale,
                 main_prompt_decay = params.latent_mask_weight_decay,
                 control_preprocess_mode = params.control_preprocess_mode,
-                generator=torch.Generator(device='cuda').manual_seed(params.random_seed)
+                generator = torch.Generator(device='cuda').manual_seed(params.random_seed),
+                control_scale_decay_ratio = params.control_scale_decay_ratio
             )
         except Exception as e:
             traceback.print_exc()
