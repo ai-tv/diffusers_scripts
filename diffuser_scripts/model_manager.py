@@ -15,6 +15,7 @@ from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDESchedu
 
 from diffuser_scripts.utils.lora_loader import LoraLoader
 from diffuser_scripts.utils.logger import logger
+from diffuser_scripts.annotators import canny, dwpose
 
 
 @dataclass
@@ -121,7 +122,12 @@ def load_latent_couple_pipeline(
 class LatentCouplePipelinesManager:
 
     def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
+        self.annotators = {
+            'canny': canny.canny,
+            'dwpose': dwpose.DWposeDetector()
+        }
         self.pipelines = load_latent_couple_pipeline(config, model_config)
+        self.controlnet_names = config.default_controlnet_name
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
         self.lock = Lock()
@@ -139,7 +145,17 @@ class LatentCouplePipelinesManager:
             requires_safety_checker = p.requires_safety_checker
         ).to(p.device)
 
+    def is_controlnet_same(self, controlnet_path):
+        if isinstance(controlnet_path, str):
+            return self.controlnet_names == controlnet_path
+        elif isinstance(controlnet_path, list):
+            return isinstance(self.controlnet_names, list) and \
+                all([a == b for a, b in sorted(controlnet_path, self.controlnet_names)])
+
     def set_controlnet(self, controlnet_path: T.Union[str, list]):
+        if self.is_controlnet_same(controlnet_path):
+            return
+
         logger.info("setting controlnet as %s ... " % (controlnet_path, ))
         if isinstance(controlnet_path, str):
             control_model = retry(ControlNetModel.from_pretrained)(controlnet_path, torch_dtype=torch.float16)

@@ -139,6 +139,7 @@ def latent_couple_with_control(
     control_guidance_end: Union[float, List[float]] = 0.5,
     controlnet_conditioning_scale = 1.0,
     control_preprocess_mode: str = "webui",
+    control_scale_decay_ratio: float = 0.825,
     main_prompt_decay = 0.01,
     latent_couple_min_ratio: float = 0.1,
     latent_couple_max_ratio: float = 0.9
@@ -289,7 +290,7 @@ def latent_couple_with_control(
         ]
         controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
     if control_mode == 'prompt':
-        controlnet_scales = [(0.825 ** float(13 - i)) for i in range(13)]    
+        controlnet_scales = [(control_scale_decay_ratio ** float(13 - i)) for i in range(13)]    
     else:
         controlnet_scales = [1 for _ in range(13)]
     

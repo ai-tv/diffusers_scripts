@@ -69,12 +69,15 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     """ request for txt2image with controlnet """
 
     condition_img_str: str = None
-    control_model_name: str = 'lllyasviel/control_v11p_sd15_canny'
+    control_image_type: str = 'processed'
+    control_annotators: str = 'canny'
+    control_model_name: T.Union[str, T.List] = 'lllyasviel/control_v11p_sd15_canny'
     control_mode: str = 'prompt' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
     control_preprocess_mode: str = "webui"
+    control_scale_decay_ratio: float = 0.825
 
     @property
     def condition_image(self):

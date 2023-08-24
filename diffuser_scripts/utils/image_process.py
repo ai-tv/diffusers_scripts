@@ -5,6 +5,16 @@ from einops import rearrange
 from diffuser_scripts.utils.lvminthin import lvmin_thin, nake_nms
 
 
+def resize_shortest(image, size, modular=1):
+    h, w = image.shape[:2]
+    a = min(h, w)
+    ratio = size / a
+    h = int((h * ratio) // modular * modular)
+    w = int((w * ratio) // modular * modular)
+    image = cv2.resize(image, (w, h))
+    return image
+
+
 def HWC3(x):
     assert x.dtype == np.uint8
     if x.ndim == 2:
