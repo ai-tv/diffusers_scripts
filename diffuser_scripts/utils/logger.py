@@ -7,7 +7,7 @@ from loguru import logger
 import cv2
 from PIL import Image
 
-logger.add(sys.stderr, format="{time} {level} {message}", level="INFO")
+# logger.add(sys.stderr, format="{time} {level} {message}", level="INFO")
 
 
 def dump_image_to_dir(image: Image.Image, output_dir: str, name=''):
