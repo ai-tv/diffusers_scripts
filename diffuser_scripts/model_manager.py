@@ -123,8 +123,8 @@ class LatentCouplePipelinesManager:
 
     def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
         self.annotators = {
-            'canny': canny.canny,
-            'dwpose': dwpose.DWposeDetector()
+            'canny': canny,
+            # 'dwpose': dwpose.DWposeDetector()
         }
         self.pipelines = load_latent_couple_pipeline(config, model_config)
         self.controlnet_names = config.default_controlnet_name

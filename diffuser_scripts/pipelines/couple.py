@@ -118,6 +118,7 @@ def latent_couple_with_control(
     image: Image.Image,
     couple_pos: List[str] = ["1:1-0:0","1:2-0:0","1:2-0:1"],
     couple_weights: List[float] = [0.7, 0.3, 0.3],
+    couple_mask_list: List[np.ndarray] = None,
     negative_prompts = None,
     height: int = None,
     width: int = None,
@@ -142,9 +143,10 @@ def latent_couple_with_control(
     control_scale_decay_ratio: float = 0.825,
     main_prompt_decay = 0.01,
     latent_couple_min_ratio: float = 0.1,
-    latent_couple_max_ratio: float = 0.9
+    latent_couple_max_ratio: float = 0.9,
+    debug_steps: List[int] = [],
 ):
-    mask_list = make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
+    mask_list = couple_mask_list if couple_mask_list is not None else make_mask_list(couple_pos, weights=couple_weights, width=width, height=height)
     prompt_embeddings = []
     negative_prompt_embeds = []
     from diffuser_scripts.prompts.text_embedding import get_text_encoder
@@ -296,6 +298,7 @@ def latent_couple_with_control(
     
     # 8. Denoising loop
     # num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+    debug_images = []
     for i, t in pipes[0].progress_bar(enumerate(timesteps)):
         # expand the latents if we are doing classifier free guidance
         latent_model_input = torch.cat([latents] * (len(prompt_embeds) + 1)) if do_classifier_free_guidance else latents
@@ -305,7 +308,7 @@ def latent_couple_with_control(
         noise_preds = []
 
         if isinstance(controlnet, ControlNetModel) and controlnet_keep[i] > 0 or (
-            not isinstance(controlnet, ControlNetModel) and controlnet_keep[i][0] > 0):
+            not isinstance(controlnet, ControlNetModel) and sum(controlnet_keep[i]) > 0):
             if isinstance(controlnet_keep[i], list):
                 cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
             else:
@@ -373,6 +376,14 @@ def latent_couple_with_control(
             # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
             latent_couple += noise_pred.to(dtype=this_mask.dtype) * this_mask
         latents = pipes[0].scheduler.step(latent_couple.to(dtype=noise_pred.dtype), t, latents, **extra_step_kwargs).prev_sample
+        if i in debug_steps:
+            debug_image = pipes[0].decode_latents(latents)
+            debug_image = pipes[0].numpy_to_pil(debug_image)
+            debug_images.append(debug_image[0])
+
     output_image = pipes[0].decode_latents(latents)
     output_image = pipes[0].numpy_to_pil(output_image)
-    return output_image[0]
+    if len(debug_images) > 0:
+        return output_image[0], debug_images
+    else:
+        return output_image[0], debug_images

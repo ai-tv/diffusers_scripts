@@ -58,6 +58,8 @@ class Txt2ImageParams:
     num_inference_steps: int = 30
     extra_params: T.Optional[T.Dict] = None
     random_seed: int = -1
+    debug_steps: T.List[int] = None
+    request_id: str = 'none'
 
     @property
     def json(self):
@@ -120,17 +122,27 @@ class ImageGenerationResult:
 
     task: Txt2ImageParams
     result_image_str: str
+    intermediate_states: T.List[str] = None
 
     @staticmethod
-    def from_task_and_image(task: Txt2ImageParams, image: T.Union[Image.Image, np.ndarray]):
-        return ImageGenerationResult(task, encode_image_b64(image))
+    def from_task_and_image(
+        task: Txt2ImageParams,
+        image: T.Union[Image.Image, np.ndarray],
+        intermediate_states: T.List[T.Union[Image.Image, np.ndarray]] = []
+    ):
+        return ImageGenerationResult(
+            task = task,
+            result_image_str = encode_image_b64(image),
+            intermediate_states = [encode_image_b64(i) for i in intermediate_states]
+        )
 
     @staticmethod
     def from_json(obj):
         task = obj['task']
         return ImageGenerationResult(
             LatentCoupleWithControlTaskParams(**task),
-            result_image_str=obj['result_image_str']
+            result_image_str=obj['result_image_str'],
+            intermediate_states = obj['intermediate_states']
         )
 
     @property
@@ -140,3 +152,12 @@ class ImageGenerationResult:
     @property
     def generated_image(self):
         return Image.fromarray(decode_image_b64(self.result_image_str))
+
+    def get_intermediate_states(self, channel_reverse=True):
+        return [Image.fromarray(decode_image_b64(i)[..., ::(-1 if channel_reverse else 1)]) for i in self.intermediate_states]
+
+    def get_generated_images(self, channel_reverse=True):
+        i = decode_image_b64(self.result_image_str)
+        if channel_reverse:
+            i = i[..., ::-1]
+        return Image.fromarray(i)

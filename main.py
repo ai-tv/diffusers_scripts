@@ -74,7 +74,7 @@ async def handle_latent_couple (request: Request):
             logger.info("loading loras: %s" % lora_configs, )
             model_manager.load_loras(lora_configs)
             model_manager.set_controlnet(controlnet_path=params.control_model_name)
-            result = latent_couple_with_control(
+            result, debugs = latent_couple_with_control(
                 pipes = model_manager.pipelines,
                 prompts = params.prompt,
                 image = control_image,
@@ -92,8 +92,10 @@ async def handle_latent_couple (request: Request):
                 main_prompt_decay = params.latent_mask_weight_decay,
                 control_preprocess_mode = params.control_preprocess_mode,
                 generator = torch.Generator(device='cuda').manual_seed(params.random_seed),
-                control_scale_decay_ratio = params.control_scale_decay_ratio
+                control_scale_decay_ratio = params.control_scale_decay_ratio,
+                debug_steps=params.debug_steps
             )
+            logger.info(f"has {len(debugs)} debug result")
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(status_code=400, detail=str(e))
@@ -106,4 +108,4 @@ async def handle_latent_couple (request: Request):
     if result is None:
         return {"result": result}
     else:
-        return ImageGenerationResult.from_task_and_image(params, result).json
+        return ImageGenerationResult.from_task_and_image(params, result, debugs).json
