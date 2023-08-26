@@ -67,7 +67,7 @@ def test_pipeline(output_name="default", random_seed=0):
     # scheduler.config.algorithm_type = 'sde-dpmsolver++'
     pipeline.scheduler = scheduler
 
-    id_mlp_path = '/mnt/lg102/zwshi/projects/core/lora-scripts/tasks/output/033_cropface_relax1.0/033_cropface_relax1.0-000009.safetensors'
+    id_mlp_path = '/mnt/lg102/zwshi/projects/core/lora-scripts/tasks/output/035_mix/035_mix-000008.safetensors'
     lora_loader = LoraLoader()
     lora_loader.load_lora_for_pipelines([pipeline], [{id_mlp_path: 1}])
     id_mlp = torch.load(id_mlp_path + '_mlp.pt').to('cuda').eval()
@@ -76,35 +76,46 @@ def test_pipeline(output_name="default", random_seed=0):
     tasks = sorted(glob.glob("test_images/*.json"))
     tasks_conditions = sorted(glob.glob("test_images/*.png"))
     prompts = [
-        'a photo of a man, facing front, colored, beautilful, full body',
-        'a photo of a man, facing camera, colored, beautilful, full body',
-        'a photo of a man, frontal face, colored, beautilful, full body',
-        'a photo of a man, facing left, colored, beautilful, full body',
-        'a photo of a man, facing right, colored, beautilful, full body',
-        'a photo of a man, facing up, colored, beautilful, full body',
-        'a photo of a man, facing down, colored, beautilful, full body',
+        'a photo of a man, facing front, colored, beautilful, young, (angry), full body',
+        'a photo of a man, facing camera, colored, beautilful, young, (laughing), full body',
+        'a photo of a man, frontal face, colored, beautilful, young, (smile), full body',
+        'a photo of a man, facing left, colored, beautilful, young, (angry), full body',
+        'a photo of a man, facing right, colored, beautilful, young, (happy), full body',
+        'a photo of a man, facing up, colored, beautilful, young, (sad), full body',
+        'a photo of a man, facing down, colored, beautilful, young, (disappointed), full body',
     ]
     negative_prompt = 'paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)'
     
     rows = []
+    results = []
+
     with torch.no_grad():
         for k, s in [
             ('/mnt/lg104/character_dataset/preprocessed_v0/万茜/34.png', 'woman'),
-            ('/mnt/lg104/character_dataset/preprocessed_v0/林心如/4.png', 'woman'),
-            ('/mnt/lg104/character_dataset/preprocessed_v0/杨幂/2300.png', 'woman'),
-            ('/mnt/lg104/character_dataset/preprocessed_v0/张雨绮/2.png', 'woman'),
             ('/mnt/lg104/character_dataset/preprocessed_v0/胡歌/99.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/林心如/4.png', 'woman'),
             ('/mnt/lg104/character_dataset/preprocessed_v0/张国荣/8.png', 'man'),
-            ('/mnt/lg104/character_dataset/preprocessed_v0/谢霆锋/340.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/陈妍希/272.png', 'woman'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/刘德华/212.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/娄艺潇/4.png', 'woman'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/张译/77.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/唐嫣/43.png', 'woman'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/彭于晏/73.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/姚晨/753.png', 'woman'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/王俊凯/17.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/杨幂/2300.png', 'woman'),
             ('/mnt/lg104/character_dataset/preprocessed_v0/周杰伦/269.png', 'man'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/张雨绮/2.png', 'woman'),
+            ('/mnt/lg104/character_dataset/preprocessed_v0/谢霆锋/340.png', 'man'),
         ]:
             f = torch.FloatTensor(decode_feature(ssf.read(k)))[None, ...].cuda()
             f = id_mlp(f)
-            # print(f)
-            results = []
-            for i, prompt in enumerate(prompts):        
+            ref = Image.open(k)
+            results.append(resize_pil(ref, 768))
+            for i, prompt in enumerate(prompts):
+                prompt = prompt.replace('man', s)        
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(pipeline, prompt, negative_prompt)
-                text_embedding = torch.cat([f[None, ], text_embedding, ], dim=1)
+                text_embedding = torch.cat([f[None, ] * 1.1, text_embedding, ], dim=1)
                 uncond_embedding = torch.cat([f[None, ], uncond_embedding], dim=1)
                 result = pipeline(
                     prompt_embeds = text_embedding,
@@ -119,11 +130,11 @@ def test_pipeline(output_name="default", random_seed=0):
                     generator=torch.Generator(device='cuda').manual_seed(random_seed + i),
                 ).images[0]
                 results.append(result)
-                
-            ref = Image.open(k)
-            result = cat_pil([resize_pil(ref, 768)] + results)
-            result.save('test_result/%s/%s.jpg' % (output_name, k.split('/')[-2]))
-            rows.append(result)
+            if s == 'man':
+                result = cat_pil(results)
+                results.clear()
+                result.save('test_result/%s/%s.jpg' % (output_name, k.split('/')[-2]))
+                rows.append(result)
     result = cat_pil(rows, vertical=True)
     result.save('test_result/%s/grid.jpg' % (output_name, ))
 
