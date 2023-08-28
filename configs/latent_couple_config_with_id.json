@@ -1,0 +1,22 @@
+{
+    "model_names": [
+        "chilloutmix",
+        "chilloutmix",
+        "chilloutmix"
+    ],
+    "use_controlnet": true,
+    "default_controlnet_name": "lllyasviel/control_v11p_sd15_canny",
+    "preprocessor": {
+        "control_annotator_names": ["canny", "dwpose"],
+        "control_annotator_args": {
+            "dwpose": {
+                "onnx_det": "annotator/ckpts/yolox_l.onnx",
+                "onnx_pose": "annotator/ckpts/dw-ll_ucoco_384.onnx"
+            },
+            "canny": {}
+        },
+        "subject_locator": "/mnt/lg102/zwshi/model_zoo/yolov8x-seg.pt",
+        "face_service_host": "192.168.110.102",
+        "face_id_mlp": "/mnt/lg102/zwshi/projects/core/lora-scripts/tasks/output/035_mix/035_mix-000008.safetensors"
+    }
+}

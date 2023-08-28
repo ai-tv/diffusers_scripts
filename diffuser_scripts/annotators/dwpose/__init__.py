@@ -30,9 +30,12 @@ def draw_pose(pose, H, W):
 
 
 class DWposeDetector:
-    def __init__(self):
-
-        self.pose_estimation = Wholebody()
+    def __init__(
+        self, 
+        onnx_det = 'annotator/ckpts/yolox_l.onnx', 
+        onnx_pose = 'annotator/ckpts/dw-ll_ucoco_384.onnx'
+    ):
+        self.pose_estimation = Wholebody(onnx_det, onnx_pose)
 
     def __call__(self, oriImg):
         oriImg = oriImg.copy()
@@ -52,7 +55,7 @@ class DWposeDetector:
                     else:
                         score[i][j] = -1
 
-            un_visible = subset<0.3
+            un_visible = subset < 0.3
             candidate[un_visible] = -1
 
             foot = candidate[:,18:24]
