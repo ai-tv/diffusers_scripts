@@ -3,7 +3,7 @@ import copy
 import json
 import collections
 import typing as T
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
 
 import torch
@@ -15,7 +15,17 @@ from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDESchedu
 
 from diffuser_scripts.utils.lora_loader import LoraLoader
 from diffuser_scripts.utils.logger import logger
-from diffuser_scripts.annotators import canny, dwpose
+from diffuser_scripts.annotators import GuidanceProcessor
+
+
+@dataclass
+class GuidanceProcessConfig:
+
+    control_annotator_names: T.List[str]
+    control_annotator_args: T.Dict 
+    subject_locator: str
+    face_service_host: str = '192.168.110.102'
+    face_id_mlp: str = None
 
 
 @dataclass
@@ -24,8 +34,8 @@ class LatentCoupleConfig:
     model_names: T.List
     use_id_mlp: bool = False
     use_controlnet: bool = True
-    default_id_mlp: str = None
     default_controlnet_name: str = 'lllyasviel/control_v11p_sd15_canny'
+    preprocessor_config: GuidanceProcessConfig = None
 
     @staticmethod
     def from_json(json_path):
@@ -33,7 +43,9 @@ class LatentCoupleConfig:
         for k in list(obj.keys()):
             if k.startswith('_'):
                 del obj[k]
-        return LatentCoupleConfig(**obj)
+        preprocessor_config = GuidanceProcessConfig(**obj.get('preprocessor', {}))
+        del obj['preprocessor']
+        return LatentCoupleConfig(preprocessor_config=preprocessor_config, **obj)
 
 
 def retry(func, max_trial=-1):
@@ -51,6 +63,17 @@ def retry(func, max_trial=-1):
                 return _func(*args, **kw) 
     return _func
 
+
+def load_preprocessor(latent_couple_config: LatentCoupleConfig):
+    config = latent_couple_config.preprocessor_config
+    preprocessor = GuidanceProcessor(
+        config.control_annotator_names,
+        control_annotator_args = config.control_annotator_args,
+        subject_locator = config.subject_locator,
+        face_service_host = config.face_service_host,
+        face_id_mlp = config.face_id_mlp + '_mlp.pt'
+    )
+    return preprocessor
 
 
 def load_latent_couple_pipeline(
@@ -110,9 +133,6 @@ def load_latent_couple_pipeline(
             requires_safety_checker = False
         )
         pipe.to('cuda')
-        if i == 0 and config.use_id_mlp:
-            from diffuser_scripts.net.id_mlp import ResMlp
-            pipe.id_mlp = torch.load(config.default_id_mlp).cuda().eval()
         pipes.append(pipe)
     
     del main_pipe
@@ -122,10 +142,7 @@ def load_latent_couple_pipeline(
 class LatentCouplePipelinesManager:
 
     def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
-        self.annotators = {
-            'canny': canny,
-            # 'dwpose': dwpose.DWposeDetector()
-        }
+        self.preprocessor = load_preprocessor(config)
         self.pipelines = load_latent_couple_pipeline(config, model_config)
         self.controlnet_names = config.default_controlnet_name
         self.lora_loader = LoraLoader()
