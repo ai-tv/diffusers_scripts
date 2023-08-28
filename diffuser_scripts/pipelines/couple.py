@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Callable, Union, List
 
+import cv2
 import torch
 import numpy as np
 from PIL import Image
@@ -154,14 +155,20 @@ def latent_couple_with_control(
     for i, prompt in enumerate(prompts):
         text_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
         if id_features is not None:
-            text_embedding = torch.cat([id_features[i][None, ], text_embedding, ], dim=1).to(torch.float16)
+            if id_features[i] is not None:
+                text_embedding = torch.cat([id_features[i][None, ], text_embedding, ], dim=1).to(torch.float16)
+            else:
+                text_embedding = torch.cat([text_embedding[:, :1], text_embedding, ], dim=1).to(torch.float16)
+
         # text_embedding = embedder([prompt]).to(torch.float16)
         prompt_embeddings.append(text_embedding)
     for i, prompt in enumerate(negative_prompts):
         # uncond_embedding = embedder([prompt]).to(torch.float16)
         uncond_embedding, _ = get_weighted_text_embeddings(pipes[i], prompt=prompt, uncond_prompt=None, )
-        if id_features is not None:
+        if id_features is not None and id_features[i] is not None:
             uncond_embedding = torch.cat([id_features[i][None, ], uncond_embedding], dim=1).to(torch.float16)
+        else:
+            uncond_embedding = torch.cat([uncond_embedding[:, :1], uncond_embedding, ], dim=1).to(torch.float16)
         negative_prompt_embeds.append(uncond_embedding)
     # data01 = np.load('control_999_1.npz')
     # data02 = np.load('control_999_2.npz')
@@ -346,6 +353,8 @@ def latent_couple_with_control(
             use_controlnet = False
 
         latent_couple = 0
+        # masks = process_masks(mask_list, height, width, weights=np.clip(couple_weights[1] + main_prompt_decay * i, 
+        #     latent_couple_min_ratio, latent_couple_max_ratio))
         for j, embed in enumerate(prompt_embeddings):
             # print(embed.shape, latent_model_input.shape, t, m.shape)
             noise_pred_text = pipes[j].unet(
@@ -373,6 +382,7 @@ def latent_couple_with_control(
                 torch.clip(mask_list[j] + main_prompt_decay * i * (-1 if j == 0 else 1), latent_couple_min_ratio, latent_couple_max_ratio), 
                 mask_list[j]
             )
+            # this_mask = masks[j]
             # this_mask = torch.ones_like(this_mask) if j == 0 else torch.zeros_like(this_mask)
             latent_couple += noise_pred.to(dtype=this_mask.dtype) * this_mask
         latents = pipes[0].scheduler.step(latent_couple.to(dtype=noise_pred.dtype), t, latents, **extra_step_kwargs).prev_sample
@@ -387,3 +397,29 @@ def latent_couple_with_control(
         return output_image[0], debug_images
     else:
         return output_image[0], debug_images
+
+
+def process_masks(masks, h, w, weights=0.7, device='cuda'):
+    new_masks = []
+    xs = []
+    intersect = None
+    for mask in masks:
+        y, x = np.where(mask)
+        xs.append(x.mean())
+        mask = cv2.resize(mask, (w//8, h//8), )
+        intersect = mask > 0 if intersect is None else intersect & (mask > 0)
+        new_masks.append(mask)
+
+    for i, mask in enumerate(new_masks):
+        mask = np.where(
+            mask > 0, 
+            mask * weights, 
+            np.where(intersect, np.zeros_like(mask), np.ones_like(mask) * (1 - weights) / 2))
+        new_masks[i] = mask
+
+    xs, new_masks = zip(*sorted(zip(xs, new_masks)))
+    new_masks = [1-sum(new_masks)] + list(new_masks)
+    return [
+        torch.FloatTensor(mask[None, ...]).to(device)
+        for mask in new_masks
+    ]

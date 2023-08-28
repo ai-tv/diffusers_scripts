@@ -50,6 +50,8 @@ class Txt2ImageParams:
     negative_prompt: str
     base_model: str
     lora_configs: T.Dict[str, float]
+    id_reference_img: T.List = None
+    add_id_feature: T.List = None
     guidance_scale: float = 8.0
     num_image_per_prompt: int = 1
     height: int = 768
