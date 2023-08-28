@@ -33,3 +33,7 @@ def decode_arrfp_b64(s, dtype=np.float16):
     r = base64.decodebytes(s)
     q = np.frombuffer(r, dtype=dtype)
     return q
+
+
+def encode_bytes_b64(bdata, encoding='ascii'):
+    return base64.b64encode(bdata).decode(encoding)
