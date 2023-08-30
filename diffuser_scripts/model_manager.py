@@ -18,6 +18,12 @@ from diffuser_scripts.utils.logger import logger
 from diffuser_scripts.annotators import GuidanceProcessor
 
 
+SCHEDULER_LINEAR_START = 0.00085
+SCHEDULER_LINEAR_END = 0.012
+SCHEDULER_TIMESTEPS = 1000
+SCHEDLER_SCHEDULE = "scaled_linear"
+
+
 @dataclass
 class GuidanceProcessConfig:
 
@@ -101,9 +107,16 @@ def load_latent_couple_pipeline(
         local_files_only=True,
         safety_checker = None
     )
-        
-    scheduler = DPMSolverMultistepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
-    scheduler.config.algorithm_type = 'sde-dpmsolver++'
+    scheduler = DPMSolverMultistepScheduler(        
+        num_train_timesteps = 1000,
+        beta_start = 8.5e-4,
+        beta_end = 1.2e-2,
+        beta_schedule = 'scaled_linear',
+        algorithm_type = 'dpmsolver++',
+        # use_karras_sigmas = True
+    )
+    # scheduler.config.algorithm_type = 'sde-dpmsolver++'
+    # scheduler = DPMSolverMultistepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     # scheduler = DPMSolverSinglestepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     pipes = []
     for i, name in enumerate(config.model_names):

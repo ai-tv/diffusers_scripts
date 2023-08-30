@@ -32,12 +32,16 @@ def test_post_app(port='1234', random_seed=-1):
         "width": 1024,
         "height": 768,
         "lora_configs": [
-            {},
             {
-                "exp0814_baijingting_single-000005": 0.8
+                "035_mix-000008": 0.8
             },
             {
-                "035_mix-000008": 1
+                "exp0814_baijingting_single-000005": 0.8,
+                "035_mix-000008": 0.2
+            },
+            {
+                "exp0814_baijingting_single-000005": 0.2,
+                "035_mix-000008": 0.8
             }
         ],
         "id_reference_img": [None, None, encode_image_b64(wc)],
