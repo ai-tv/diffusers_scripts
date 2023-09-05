@@ -2,7 +2,7 @@
 
 import json
 import typing as T
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 import numpy as np
 from PIL import Image
@@ -56,12 +56,13 @@ class Txt2ImageParams:
     num_image_per_prompt: int = 1
     height: int = 768
     width: int = 512
-    sampler: str = 'sde-dmpsolver++'
+    sampler: str = 'dpmsolver++'
     num_inference_steps: int = 30
     extra_params: T.Optional[T.Dict] = None
     random_seed: int = -1
-    debug_steps: T.List[int] = None
+    debug_steps: T.List[int] = field(default_factory=list)
     request_id: str = 'none'
+    sampler: str = None
 
     @property
     def json(self):

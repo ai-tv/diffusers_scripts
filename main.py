@@ -17,7 +17,7 @@ from diffuser_scripts.handler import handle_latent_couple
 log_dir = 'log'
 app = FastAPI()
 default_model_path = "configs/default_model_infos.json"
-default_pipeline_path = "configs/latent_couple_config_with_id.json"
+default_pipeline_path = "configs/latent_couple_config_ad.json"
 pipelin_config = LatentCoupleConfig.from_json(default_pipeline_path)
 if os.path.exists(default_model_path):
     model_config = json.load(open(default_model_path))

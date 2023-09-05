@@ -11,17 +11,29 @@ from transformers import CLIPTextModel
 from diffusers import UNet2DConditionModel
 from diffusers import StableDiffusionPipeline, StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
-from diffusers.schedulers import DPMSolverMultistepScheduler, DPMSolverSDEScheduler, DPMSolverSinglestepScheduler
+from diffusers.schedulers import DPMSolverMultistepScheduler, SchedulerMixin
 
 from diffuser_scripts.utils.lora_loader import LoraLoader
 from diffuser_scripts.utils.logger import logger
 from diffuser_scripts.annotators import GuidanceProcessor
 
 
-SCHEDULER_LINEAR_START = 0.00085
-SCHEDULER_LINEAR_END = 0.012
-SCHEDULER_TIMESTEPS = 1000
-SCHEDLER_SCHEDULE = "scaled_linear"
+default_samplers = {
+    'dpm++': DPMSolverMultistepScheduler(        
+        num_train_timesteps = 1000,
+        beta_start = 8.5e-4,
+        beta_end = 1.2e-2,
+        beta_schedule = 'scaled_linear',
+        algorithm_type = 'dpmsolver++',
+    ),
+    'sde-dpm++': DPMSolverMultistepScheduler(
+        beta_start = 8.5e-4,
+        beta_end = 1.2e-2,
+        beta_schedule = "scaled_linear",
+        use_karras_sigmas = True,
+        algorithm_type = 'sde-dpmsolver++'
+    )
+}
 
 
 @dataclass
@@ -42,6 +54,7 @@ class LatentCoupleConfig:
     use_controlnet: bool = True
     default_controlnet_name: str = 'lllyasviel/control_v11p_sd15_canny'
     preprocessor_config: GuidanceProcessConfig = None
+    ad_pipeline: str = None
 
     @staticmethod
     def from_json(json_path):
@@ -157,10 +170,25 @@ class LatentCouplePipelinesManager:
     def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
         self.preprocessor = load_preprocessor(config)
         self.pipelines = load_latent_couple_pipeline(config, model_config)
+        if config.ad_pipeline is not None:
+            from asdff import AdPipeline
+            logger.info("loading detailer ...")
+            self.ad_pipeline = AdPipeline.from_pretrained(
+                model_config['base_models'][config.ad_pipeline]['local_path'], 
+                torch_dtype=torch.float16,
+                load_safety_checker=False,
+                local_files_only=True,
+                safety_checker = None
+            ).to(self.pipelines[0].device)
+            self.ad_pipeline.scheduler = copy.deepcopy(self.pipelines[0].scheduler)
+            self.use_ad_pipeline = True
+        else:
+            self.use_ad_pipeline = False
         self.controlnet_names = config.default_controlnet_name
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
-        self.lock = Lock()
+        self.lock_lc = Lock()
+        self.lock_ad = Lock()
 
     def get_sd(self, i=0):
         p = self.pipelines[i]
@@ -199,12 +227,26 @@ class LatentCouplePipelinesManager:
         for pipe in self.pipelines:
             pipe.controlnet = control_model
 
+    def set_sampler(self, sampler: str):
+        if sampler in default_samplers:
+            logger.info("setting sampler %s" % (sampler, ))
+            for pipe in self.pipelines:
+                pipe.scheduler = copy.deepcopy(default_samplers[sampler])
+        elif isinstance(sampler, SchedulerMixin):
+            for pipe in self.pipelines:
+                pipe.scheduler = copy.deepcopy(sampler)
+        else:
+            raise ValueError(sampler)
+
     def load_lora(self, i, lora, weight=1.0):
-        pipe = self.pipelines[i]
-        self.lora_status[i][lora] += weight
-        self.lora_loader.load_lora_weights(pipe, lora, weight, 'cuda', torch.float32)
-        if abs(self.lora_status[i][lora]) < 1e-6:
-            del self.lora_status[i][lora]
+        if isinstance(i, int):
+            pipe = self.pipelines[i]
+            self.lora_status[i][lora] += weight
+            self.lora_loader.load_lora_weights(pipe, lora, weight, 'cuda', torch.float32)
+            if abs(self.lora_status[i][lora]) < 1e-6:
+                del self.lora_status[i][lora]
+        else:
+            self.lora_loader.load_lora_weights(i, lora, weight, 'cuda', torch.float32)
     
     def load_loras(self, lora_configs):
         for i, lora_config in enumerate(lora_configs):
