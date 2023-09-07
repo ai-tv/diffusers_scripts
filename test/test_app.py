@@ -57,7 +57,8 @@ def test_post_app(port='1234', random_seed=-1):
         "latent_mask_weight_decay": 0.03,
         "control_mode": "prompt",
         "control_scale_decay_ratio": 0.825,
-        "debug_steps": []
+        "debug_steps": [],
+        "sampler": 'dpm++'
     }
     start = time.time()
     response = requests.post("http://192.168.110.102:%s/get_latent_couple" % port, data=json.dumps(obj))
