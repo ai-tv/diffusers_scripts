@@ -27,8 +27,8 @@ default_samplers = {
         algorithm_type = 'dpmsolver++',
     ),
     'sde-dpm++': DPMSolverMultistepScheduler(
-        beta_start = 8.5e-4,
-        beta_end = 1.2e-2,
+        beta_start = 8.0e-4,
+        beta_end = 1.1e-2,
         beta_schedule = "scaled_linear",
         use_karras_sigmas = True,
         algorithm_type = 'sde-dpmsolver++'
@@ -229,7 +229,7 @@ class LatentCouplePipelinesManager:
 
     def set_sampler(self, sampler: str):
         if sampler in default_samplers:
-            logger.info("setting sampler %s" % (sampler, ))
+            # logger.info("setting sampler %s" % (sampler, ))
             for pipe in self.pipelines:
                 pipe.scheduler = copy.deepcopy(default_samplers[sampler])
         elif isinstance(sampler, SchedulerMixin):

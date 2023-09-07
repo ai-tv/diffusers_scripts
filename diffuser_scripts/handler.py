@@ -49,6 +49,8 @@ def handle_latent_couple(
     lora_configs: dict,
     log_dir: str = 'log'
 ):
+    request_id = params.request_id
+
     ### 2. preprocess
     control_image = get_guidance_result(model_manager, params, log_dir=log_dir)
     features = get_face_feature(model_manager, params) if params.id_reference_img is not None else None
@@ -58,7 +60,7 @@ def handle_latent_couple(
     ### 3. latent couple preprocess
     with model_manager.lock_lc:
         try:
-            logger.info("loading loras: %s" % lora_configs, )
+            logger.info("%s loading loras: %s" % (request_id, lora_configs, ))
             model_manager.load_loras(lora_configs)
             model_manager.set_controlnet(controlnet_path=params.control_model_name)
             if params.sampler is not None:
@@ -89,12 +91,11 @@ def handle_latent_couple(
             traceback.print_exc()
             raise HTTPException(status_code=400, detail=str(e))
         finally:
-            logger.info("unload loras ...")
+            logger.info("%s unload loras ..." % (request_id, ))
             model_manager.unload_loras()
 
     ### 4. detailing around face
     with model_manager.lock_ad:
-        logger.info("detailing ...")
         common = {
             "num_inference_steps": 30,
             'strength': 0.5
@@ -102,17 +103,20 @@ def handle_latent_couple(
         client = FaceClient('192.168.110.102')
         image_result = client.request_face(encode_image_b64(result))
         dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
+        logger.info("%s detailing %d faces..." % (request_id, len(dets) ))
         for i, (f, lora) in enumerate(zip(features[1:],
-            [list(lora.keys())[0] for lora in lora_configs[1:]])):
+            [sorted(lora.items(), key=lambda x: -x[1])[0][0] for lora in lora_configs[1:]] ) ):
+            if i >= len(dets):
+                break
             model_manager.load_lora(model_manager.ad_pipeline, lora)
+            logger.info("%s activateing lora %s ..." % (request_id, lora ))
             try:
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(
                     model_manager.ad_pipeline,
-                    prompt="a photo of young thin face, good-looking, best quality",
+                    prompt="%s, young, good-looking, best quality" % params.prompt[1+i], 
                     uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
                 )
                 if f is not None:
-                    logger.info("activating multi lora ...")
                     p = torch.cat([f[None, ], text_embedding, ], dim=1)
                     u = torch.cat([f[None, ], uncond_embedding], dim=1)
                 else:
@@ -132,7 +136,7 @@ def handle_latent_couple(
                 model_manager.load_lora(model_manager.ad_pipeline, lora, -1.0)
 
     ### 4. parse and save output and return
-    logger.info("generation succeed for %s" % (params.prompt, ))
+    logger.info("%s generation succeed for %s" % (request_id, params.prompt, ))
     dump_image_to_dir(result, 'log', name='result')
     if result is None:
         return {"result": result}

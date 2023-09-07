@@ -1,4 +1,5 @@
 import os
+import copy
 import json
 import random
 from threading import Lock
@@ -42,12 +43,14 @@ async def handle_get_latent_couple(request: Request):
         params = LatentCoupleWithControlTaskParams(**data)
         lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.lora_configs]
         params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
-        logger.info("got request, %s" % (params.prompt, ))
+        request_obj = params.json
+        for k in ('id_reference_img', 'condition_img_str', ):
+            del request_obj[k]
+        logger.info("%s got request, %s" % (params.request_id, json.dumps(request_obj), ))
         dump_request_to_file(params, 'log')
         if len(params.prompt) != len(model_manager.pipelines) or len(params.negative_prompt) != len(model_manager.pipelines):
             raise HTTPException(status_code=400, detail="prompt or negative prompt must be a list of %d" % (len(model_manager.pipelines), ))
 
-        ### ...
         return handle_latent_couple(model_manager, params, lora_configs, log_dir=log_dir)
 
     except Exception as e:
