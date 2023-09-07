@@ -100,6 +100,8 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     negative_prompt: T.List[str]
     base_model: T.List[str]
     lora_configs: T.List[T.Dict[str, float]]
+    id_reference_img: T.List = field(default_factory=lambda:[None, None, None])
+    add_id_feature: T.List = field(default_factory=lambda:[False, False, False])
     latent_mask_weight: T.List[float] = (0.7, 0.3, 0.3)
     latent_mask_weight_decay: T.List[float] = 0.03
     latent_pos: T.List[str] = None
