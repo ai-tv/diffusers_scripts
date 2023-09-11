@@ -62,11 +62,16 @@ class Txt2ImageParams:
     random_seed: int = -1
     debug_steps: T.List[int] = field(default_factory=list)
     request_id: str = 'none'
+    image_index : int = 0
     sampler: str = None
 
     @property
     def json(self):
         return asdict(self)
+
+    @property
+    def uniq_id(self):
+        return self.request_id + '-' + str(self.image_index)
 
 
 @dataclass
