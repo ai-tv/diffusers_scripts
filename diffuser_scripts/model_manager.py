@@ -238,6 +238,14 @@ class LatentCouplePipelinesManager:
         else:
             raise ValueError(sampler)
 
+    def set_ad_sampler(self, sampler: str):
+        if sampler in default_samplers:
+            self.ad_pipeline.scheduler = copy.deepcopy(default_samplers[sampler])
+        elif isinstance(sampler, SchedulerMixin):
+            self.ad_pipeline.scheduler = copy.deepcopy(sampler)
+        else:
+            raise ValueError(sampler)
+
     def load_lora(self, i, lora, weight=1.0):
         if isinstance(i, int):
             pipe = self.pipelines[i]
@@ -258,4 +266,8 @@ class LatentCouplePipelinesManager:
         for i, lora_status in enumerate(self.lora_status):
             unload_configs.append({k: -v for k, v in lora_status.items()})
         self.load_loras(unload_configs)
+
+    def check_correctness(self):
+        return len(self.lora_status) == 0
+
 

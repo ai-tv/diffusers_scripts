@@ -1,5 +1,7 @@
 import traceback
+
 import torch
+from PIL import Image
 from fastapi import HTTPException
 
 from sbp.nn.app.client import FaceClient
@@ -9,25 +11,27 @@ from .utils.logger import logger, dump_image_to_dir
 from .utils.decode import encode_image_b64
 from .utils.long_prompt_weighting import get_weighted_text_embeddings
 from .pipelines.couple import latent_couple_with_control
-from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams
+from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams, Txt2ImageParams
 
 
 def get_guidance_result(model_manager, params, log_dir='log'):
     guidance_processor = model_manager.preprocessor
     image = params.condition_image_np
+    request_id = params.uniq_id
     if params.control_image_type == 'processed':
         control_image = image
-        dump_image_to_dir(control_image, log_dir, name='condition')
+        dump_image_to_dir(control_image, log_dir, name='%s_cond.jpg' % request_id)
     elif params.control_image_type == 'original':
         annotator_names = params.control_annotators
         image_result = guidance_processor.infer_guidance_image(image)
+        dump_image_to_dir(image, log_dir, name='%s_guidance.jpg' % request_id)
         if isinstance(annotator_names, str):
             control_image = image_result.annotation_maps[annotator_names]
-            dump_image_to_dir(control_image, log_dir, name='condition')
+            dump_image_to_dir(control_image, log_dir, name='%s_cond.jpg' % request_id)
         elif isinstance(annotator_names, list):
             control_image = [image_result.annotation_maps[n] for n in annotator_names]
-            for c in control_image:
-                dump_image_to_dir(c, log_dir, name='condition')
+            for i, c in enumerate(control_image):
+                dump_image_to_dir(c, log_dir, name='%s_cond%d.jpg' % (request_id, i))
         else:
             raise ValueError(f"bad value for annotator={annotator_names} or control_type={params.control_image_type}")
     else:
@@ -46,10 +50,10 @@ def get_face_feature(model_manager, params):
 def handle_latent_couple(
     model_manager: LatentCouplePipelinesManager,
     params: LatentCoupleWithControlTaskParams,
-    lora_configs: dict,
+    lora_configs: list,
     log_dir: str = 'log'
 ):
-    request_id = params.request_id
+    request_id = params.uniq_id
 
     ### 2. preprocess
     control_image = get_guidance_result(model_manager, params, log_dir=log_dir)
@@ -93,19 +97,41 @@ def handle_latent_couple(
         finally:
             logger.info("%s unload loras ..." % (request_id, ))
             model_manager.unload_loras()
+    dump_image_to_dir(result, 'log', name='%s_before_detailer.jpg' % request_id)
 
-    ### 4. detailing around face
+    ### 4. after detailer
+    result = detailer(model_manager, params, init_image=result, features=features[1:], lora_configs=lora_configs[1:])
+
+    ### 5. parse and save output and return
+    logger.info("%s generation succeed for %s" % (request_id, params.prompt, ))
+    dump_image_to_dir(result, 'log', name='%s.jpg' % request_id)
+    if result is None:
+        return {"result": result}
+    else:
+        return ImageGenerationResult.from_task_and_image(params, result, debugs)
+
+
+def detailer(
+    model_manager: LatentCouplePipelinesManager, 
+    params: Txt2ImageParams, 
+    init_image: Image, 
+    features, lora_configs: list
+):
+    request_id = params.uniq_id
     with model_manager.lock_ad:
         common = {
-            "num_inference_steps": 30,
-            'strength': 0.5
+            "num_inference_steps": 20,
+            'strength': 0.45
         }
+        result = init_image
         client = FaceClient('192.168.110.102')
         image_result = client.request_face(encode_image_b64(result))
         dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
         logger.info("%s detailing %d faces..." % (request_id, len(dets) ))
-        for i, (f, lora) in enumerate(zip(features[1:],
-            [sorted(lora.items(), key=lambda x: -x[1])[0][0] for lora in lora_configs[1:]] ) ):
+        if params.sampler is not None:
+            model_manager.set_ad_sampler(params.sampler)
+        for i, (f, lora) in enumerate(zip(features,
+            [sorted(lora.items(), key=lambda x: -x[1])[0][0] for lora in lora_configs]) ):
             if i >= len(dets):
                 break
             model_manager.load_lora(model_manager.ad_pipeline, lora)
@@ -134,11 +160,4 @@ def handle_latent_couple(
                 ).images[0]
             finally:
                 model_manager.load_lora(model_manager.ad_pipeline, lora, -1.0)
-
-    ### 4. parse and save output and return
-    logger.info("%s generation succeed for %s" % (request_id, params.prompt, ))
-    dump_image_to_dir(result, 'log', name='result')
-    if result is None:
-        return {"result": result}
-    else:
-        return ImageGenerationResult.from_task_and_image(params, result, debugs).json
+        return result

@@ -46,13 +46,37 @@ async def handle_get_latent_couple(request: Request):
         request_obj = params.json
         for k in ('id_reference_img', 'condition_img_str', ):
             del request_obj[k]
-        logger.info("%s got request, %s" % (params.request_id, json.dumps(request_obj), ))
+        logger.info("%s got request, %s" % (params.uniq_id, json.dumps(request_obj), ))
         dump_request_to_file(params, 'log')
         if len(params.prompt) != len(model_manager.pipelines) or len(params.negative_prompt) != len(model_manager.pipelines):
             raise HTTPException(status_code=400, detail="prompt or negative prompt must be a list of %d" % (len(model_manager.pipelines), ))
-
-        return handle_latent_couple(model_manager, params, lora_configs, log_dir=log_dir)
-
+        return handle_latent_couple(model_manager, params, lora_configs, log_dir=log_dir).json
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/get_txt2img_control")
+async def handle_control(request: Request):
+    try:
+        ### 1. setup generation params
+        data = await request.json()
+        params = LatentCoupleWithControlTaskParams(**data)
+        lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.lora_configs]
+        params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
+        request_obj = params.json
+        for k in ('id_reference_img', 'condition_img_str', ):
+            del request_obj[k]
+        logger.info("%s got request, %s" % (params.uniq_id, json.dumps(request_obj), ))
+        dump_request_to_file(params, 'log')
+        if len(params.prompt) != len(model_manager.pipelines) or len(params.negative_prompt) != len(model_manager.pipelines):
+            raise HTTPException(status_code=400, detail="prompt or negative prompt must be a list of %d" % (len(model_manager.pipelines), ))
+        return handle_control(model_manager, params, lora_configs, log_dir=log_dir)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/get_status")
+async def is_alive(request: Request):
+    return {'status': 'ok' if model_config.check_correctness else 'undefined'}
