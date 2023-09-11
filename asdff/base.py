@@ -4,6 +4,7 @@ import inspect
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Iterable, List, Mapping, Optional
 
+import numpy as np
 from diffusers.utils import logging
 from PIL import Image
 
@@ -53,10 +54,6 @@ class AdPipelineBase(ABC):
             common = {}
         if txt2img_only is None:
             txt2img_only = {}
-        if inpaint_only is None:
-            inpaint_only = {}
-        if "strength" not in inpaint_only:
-            inpaint_only = {**inpaint_only, "strength": 0.4}
 
         if detectors is None:
             detectors = [self.default_detector]
@@ -87,6 +84,9 @@ class AdPipelineBase(ABC):
 
             for j, detector in enumerate(detectors):
                 masks = detector(init_image)
+                masks_arr = [np.array(m) for m in masks]
+                pos = [np.where(m)[1].mean() for m in masks_arr]
+                masks = [m for p, m in sorted(zip(pos, masks))]
                 if masks is None:
                     logger.info(
                         f"No object detected on {ordinal(i + 1)} image with {ordinal(j + 1)} detector."
@@ -104,13 +104,22 @@ class AdPipelineBase(ABC):
                     bbox_padded = bbox_padding(bbox, init_image.size, mask_padding)
 
                     crop_image = init_image.crop(bbox_padded)
+                    w, h = crop_image.size
+                    r = 512 / min(w, h)
+                    w = int(r * w // 64 * 64)
+                    h = int(r * h // 64 * 64)
                     crop_mask = mask.crop(bbox_padded)
+                    # crop_image.save(f"crop_{k}.jpg")
+                    # crop_mask.save(f"mask_{k}.jpg")
 
-                    inpaint_args = self._get_inpaint_args(common, inpaint_only)
+                    inpaint_args = self._get_inpaint_args(common, inpaint_only[k])
                     inpaint_args["image"] = crop_image
                     inpaint_args["mask_image"] = crop_mask
+                    inpaint_args["height"] = h
+                    inpaint_args["width"] = w
                     inpaint_output = self.inpaint_pipeline(**inpaint_args)
                     inpaint_image: Image.Image = inpaint_output[0][0]
+                    # inpaint_image.save(f'inpaint_{k}.jpg')
                     final_image = composite(
                         init=init_image,
                         mask=mask,
