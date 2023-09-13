@@ -29,11 +29,11 @@ class ResMlpBlock(nn.Module):
 
 class ResMlp(nn.Module):
 
-    def __init__(self, num_layers=3, num_hidden_states=768):
+    def __init__(self, num_layers=3, num_hidden_states=768, in_channel=512):
         super().__init__()
         self.num_layers = num_layers
         self.num_hidden_states = num_hidden_states
-        self.fc1 = nn.Linear(512, num_hidden_states)
+        self.fc1 = nn.Linear(in_channel, num_hidden_states)
         self.act1 = nn.SiLU()
         self.blocks = nn.ModuleList([
             ResMlpBlock(num_hidden_states, num_hidden_states)

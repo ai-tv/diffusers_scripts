@@ -1,10 +1,13 @@
 import traceback
 
+import cv2
 import torch
+import numpy as np
 from PIL import Image
 from fastapi import HTTPException
 
 from sbp.nn.app.client import FaceClient
+from sbp.nn.utils import encode_pos_scale
 from asdff.yolo import create_mask_from_bbox
 from .model_manager import LatentCoupleConfig, LatentCouplePipelinesManager
 from .utils.logger import logger, dump_image_to_dir
@@ -13,66 +16,59 @@ from .utils.long_prompt_weighting import get_weighted_text_embeddings
 from .pipelines.couple import latent_couple_with_control
 from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams, Txt2ImageParams
 
-
-def get_guidance_result(model_manager, params, log_dir='log'):
-    guidance_processor = model_manager.preprocessor
-    image = params.condition_image_np
-    request_id = params.uniq_id
-    if params.control_image_type == 'processed':
-        control_image = image
-        dump_image_to_dir(control_image, log_dir, name='%s_cond.jpg' % request_id)
-    elif params.control_image_type == 'original':
-        annotator_names = params.control_annotators
-        image_result = guidance_processor.infer_guidance_image(image)
-        dump_image_to_dir(image, log_dir, name='%s_guidance.jpg' % request_id)
-        if isinstance(annotator_names, str):
-            control_image = image_result.annotation_maps[annotator_names]
-            dump_image_to_dir(control_image, log_dir, name='%s_cond.jpg' % request_id)
-        elif isinstance(annotator_names, list):
-            control_image = [image_result.annotation_maps[n] for n in annotator_names]
-            for i, c in enumerate(control_image):
-                dump_image_to_dir(c, log_dir, name='%s_cond%d.jpg' % (request_id, i))
-        else:
-            raise ValueError(f"bad value for annotator={annotator_names} or control_type={params.control_image_type}")
-    else:
-        raise ValueError(f"bad value for annotator={annotator_names} or control_type={params.control_image_type}")
-    return control_image
-
-
-def get_face_feature(model_manager, params):
-    results = []
-    for image in params.id_reference_img:
-        image_result = model_manager.preprocessor.infer_reference_image(image)
-        results.append(image_result.extra['main_face_encode'])
-    return results
-
-
+@torch.no_grad()
 def handle_latent_couple(
     model_manager: LatentCouplePipelinesManager,
     params: LatentCoupleWithControlTaskParams,
     lora_configs: list,
+    ad_lora_configs: list,
     log_dir: str = 'log'
 ):
     request_id = params.uniq_id
 
     ### 2. preprocess
-    control_image = get_guidance_result(model_manager, params, log_dir=log_dir)
-    features = get_face_feature(model_manager, params) if params.id_reference_img is not None else None
-    if params.add_id_feature is not None or features is not None:
-        features = [f if is_add else None for f, is_add in zip(features, params.add_id_feature)]
+    guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
 
     ### 3. latent couple preprocess
     with model_manager.lock_lc:
         try:
+            ## 3.1 load lora
             logger.info("%s loading loras: %s" % (request_id, lora_configs, ))
-            model_manager.load_loras(lora_configs)
+            model_manager.load_loras_for_pipelines(lora_configs)
+
+            ## 3.2 load controlnet
             model_manager.set_controlnet(controlnet_path=params.control_model_name)
+
+            ## 3.3 set sampler
             if params.sampler is not None:
                 model_manager.set_sampler(params.sampler)
+
+            ## 3.4 set extra conditions
+            r = guidance_results.guidance_image_results
+            guided_face_dets = r.get_detection('face', topk=3) if r is not None else []
+            features = []
+            for i, result in enumerate(guidance_results.id_reference_results):
+                if params.add_pos_encode[i]:
+                    ph = torch.zeros([3, 512+64*3]).cuda()
+                    if i > 0 and r is not None:
+                        for j, det in enumerate(guided_face_dets):
+                            face = result.extra['main_face_rec']
+                            pos = encode_pos_scale(det.bbox, r.height, r.width)
+                            pos = torch.tensor(pos[None, ...]).cuda()
+                            face = torch.cat([pos, face], dim=1)
+                            ph[j] = face
+                    feature = model_manager.id_mlp(ph)
+                else:
+                    face = result.extra['main_face_rec']
+                    face = torch.tensor(face).cuda()
+                    feature = model_manager.id_mlp(face.cuda())
+                features.append(feature)
+
+            ## 3.5 run pipelines
             result, debugs = latent_couple_with_control(
                 pipes = model_manager.pipelines,
                 prompts = params.prompt,
-                image = control_image,
+                image = guidance_results.annotations,
                 couple_pos = params.latent_pos,
                 couple_weights = params.latent_mask_weight, 
                 negative_prompts = params.negative_prompt, 
@@ -96,11 +92,18 @@ def handle_latent_couple(
             raise HTTPException(status_code=400, detail=str(e))
         finally:
             logger.info("%s unload loras ..." % (request_id, ))
-            model_manager.unload_loras()
+            model_manager.unload_loras_for_pipelines()
     dump_image_to_dir(result, 'log', name='%s_before_detailer.jpg' % request_id)
 
     ### 4. after detailer
-    result = detailer(model_manager, params, init_image=result, features=features[1:], lora_configs=lora_configs[1:])
+    features = []
+    for i, r in enumerate(guidance_results.id_reference_results[1:]):
+        face = r.extra['main_face_rec']
+        face = torch.tensor(face).cuda()
+        features.append(face)
+    if len(ad_lora_configs) == 0:
+        ad_lora_configs = lora_configs[1:]
+    result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs)
 
     ### 5. parse and save output and return
     logger.info("%s generation succeed for %s" % (request_id, params.prompt, ))
@@ -130,11 +133,10 @@ def detailer(
         logger.info("%s detailing %d faces..." % (request_id, len(dets) ))
         if params.sampler is not None:
             model_manager.set_ad_sampler(params.sampler)
-        for i, (f, lora) in enumerate(zip(features,
-            [sorted(lora.items(), key=lambda x: -x[1])[0][0] for lora in lora_configs]) ):
+        for i, (f, lora) in enumerate(zip(features, lora_configs)):
             if i >= len(dets):
                 break
-            model_manager.load_lora(model_manager.ad_pipeline, lora)
+            model_manager.load_lora_for_detailer(lora)
             logger.info("%s activateing lora %s ..." % (request_id, lora ))
             try:
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(
@@ -143,6 +145,7 @@ def detailer(
                     uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
                 )
                 if f is not None:
+                    f = model_manager.detailer_id_mlp(f)
                     p = torch.cat([f[None, ], text_embedding, ], dim=1)
                     u = torch.cat([f[None, ], uncond_embedding], dim=1)
                 else:
@@ -159,5 +162,5 @@ def detailer(
                     detectors = [lambda image: create_mask_from_bbox([dets[i].bbox], image.size)]
                 ).images[0]
             finally:
-                model_manager.load_lora(model_manager.ad_pipeline, lora, -1.0)
+                model_manager.unload_lora_for_detailer()
         return result

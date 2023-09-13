@@ -7,6 +7,12 @@ import numpy as np
 from PIL import Image
 
 
+def decode_image(data):
+    s = np.frombuffer(data, np.uint8)
+    img = cv2.imdecode(s, cv2.IMREAD_COLOR)
+    return img
+
+
 def encode_image_b64(image, ext='.png'):
     if isinstance(image, Image.Image):
         image = np.array(image)[..., ::-1]

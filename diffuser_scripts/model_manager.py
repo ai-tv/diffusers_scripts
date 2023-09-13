@@ -187,6 +187,10 @@ class LatentCouplePipelinesManager:
         self.controlnet_names = config.default_controlnet_name
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
+        self.ad_lora_status = collections.defaultdict(lambda : 0.0)
+        self.id_mlp_names = {'detailer': None, 'main': None}
+        self.id_mlp = None
+        self.detailer_id_mlp = None
         self.lock_lc = Lock()
         self.lock_ad = Lock()
 
@@ -256,16 +260,47 @@ class LatentCouplePipelinesManager:
         else:
             self.lora_loader.load_lora_weights(i, lora, weight, 'cuda', torch.float32)
     
-    def load_loras(self, lora_configs):
+    def load_loras_for_pipelines(self, lora_configs):
+        mlp_path = [k + '_mlp.pt' for lora in lora_configs for k in lora if os.path.exists(k + '_mlp.pt')]
+        mlp_path = list(set(mlp_path))
+        if len(mlp_path) not in (0, 1):
+            raise ValueError("different multi-person lora not supported yet")
+        elif len(mlp_path) == 1:
+            if mlp_path[0] != self.id_mlp_names['main']:
+                logger.info("loading idmlp %s for main pipe" % (mlp_path[0], ))
+                self.id_mlp_names['main'] = mlp_path[0]
+                self.id_mlp = torch.load(self.id_mlp_names['main']).cuda().eval()
         for i, lora_config in enumerate(lora_configs):
             for k, v in lora_config.items():
                 self.load_lora(i, k, v)
 
-    def unload_loras(self):
+    def unload_loras_for_pipelines(self):
         unload_configs = []
         for i, lora_status in enumerate(self.lora_status):
             unload_configs.append({k: -v for k, v in lora_status.items()})
-        self.load_loras(unload_configs)
+        self.load_loras_for_pipelines(unload_configs)
+
+    def load_lora_for_detailer(self, lora_config):
+        mlp_path = [k + '_mlp.pt' for k in lora_config if os.path.exists(k + '_mlp.pt')]
+        mlp_path = list(set(mlp_path))
+        if len(mlp_path) not in (0, 1):
+            raise ValueError("different multi-person lora not supported yet")
+        elif len(mlp_path) == 1:
+            if mlp_path[0] != self.id_mlp_names['detailer']:
+                logger.info("loading idmlp %s for detailer" % (mlp_path[0], ))
+                self.id_mlp_names['detailer'] = mlp_path[0]
+                self.detailer_id_mlp = torch.load(self.id_mlp_names['detailer']).cuda().eval()
+        for k, v in lora_config.items():
+            if os.path.exists(k + '_mlp.pt'):
+                self.ad_pipeline.ad_id_mlp = torch.load(k + '_mlp.pt').cuda().eval()
+            assert abs(self.ad_lora_status[k]) < 1e-6
+            self.ad_lora_status[k] += v
+            self.load_lora(self.ad_pipeline, k, v)
+
+    def unload_lora_for_detailer(self):
+        for k, v in copy.deepcopy(self.ad_lora_status).items():
+            del self.ad_lora_status[k]
+            self.load_lora(self.ad_pipeline, k, -v)
 
     def check_correctness(self):
         return len(self.lora_status) == 0

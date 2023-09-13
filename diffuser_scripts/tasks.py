@@ -7,7 +7,7 @@ from dataclasses import dataclass, asdict, field
 import numpy as np
 from PIL import Image
 from diffuser_scripts.utils.decode import decode_image_b64, encode_image_b64
-
+from diffuser_scripts import __version__
 
 @dataclass
 class LoraConfig:
@@ -50,8 +50,10 @@ class Txt2ImageParams:
     negative_prompt: str
     base_model: str
     lora_configs: T.Dict[str, float]
+    ad_lora_configs: T.Dict[str, float] = None
     id_reference_img: T.List = None
     add_id_feature: T.List = None
+    add_pos_encode: T.List = None
     guidance_scale: float = 8.0
     num_image_per_prompt: int = 1
     height: int = 768
@@ -81,7 +83,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     condition_img_str: str = None
     control_image_type: str = 'processed'
     control_annotators: str = 'canny'
-    control_model_name: T.Union[str, T.List] = 'lllyasviel/control_v11p_sd15_canny'
+    control_model_name: T.Union[str, T.List] = '/mnt/lg102/zwshi/.cache/huggingface/hub/models--lllyasviel--control_v11p_sd15_canny/snapshots/115a470d547982438f70198e353a921996e2e819/'
     control_mode: str = 'prompt' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
@@ -105,8 +107,10 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     negative_prompt: T.List[str]
     base_model: T.List[str]
     lora_configs: T.List[T.Dict[str, float]]
+    ad_lora_configs: T.List[T.Dict[str, float]] = field(default_factory=list)
     id_reference_img: T.List = field(default_factory=lambda:[None, None, None])
     add_id_feature: T.List = field(default_factory=lambda:[False, False, False])
+    add_pos_encode: T.List = field(default_factory=lambda:[False, False, False])
     latent_mask_weight: T.List[float] = (0.7, 0.3, 0.3)
     latent_mask_weight_decay: T.List[float] = 0.03
     latent_pos: T.List[str] = None
@@ -132,6 +136,9 @@ class ImageGenerationResult:
 
     task: Txt2ImageParams
     result_image_str: str
+    app_verion: str = __version__
+    status: int = 0
+    status_message: str = "ok"
     intermediate_states: T.List[str] = None
 
     @staticmethod
