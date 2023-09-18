@@ -28,6 +28,16 @@ def handle_latent_couple(
 
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
+    if params.latent_pos is None:
+        r = guidance_results.guidance_image_results
+        faces = r.get_detection('face', topk=2)
+        mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
+        mid = int(mid)
+        params.latent_pos = [
+            '1:1-0:0',
+            '1:32-0:0-%s' % (mid, ),
+            '1:32-0:%s-32' % (mid, )
+        ]
 
     ### 3. latent couple preprocess
     with model_manager.lock_lc:
@@ -52,16 +62,18 @@ def handle_latent_couple(
                     ph = torch.zeros([3, 512+64*3]).cuda()
                     if i > 0 and r is not None:
                         for j, det in enumerate(guided_face_dets):
-                            face = result.extra['main_face_rec']
+                            face = result.extra['main_face_rec'].cuda()
                             pos = encode_pos_scale(det.bbox, r.height, r.width)
                             pos = torch.tensor(pos[None, ...]).cuda()
                             face = torch.cat([pos, face], dim=1)
                             ph[j] = face
                     feature = model_manager.id_mlp(ph)
                 else:
-                    face = result.extra['main_face_rec']
-                    face = torch.tensor(face).cuda()
-                    feature = model_manager.id_mlp(face.cuda())
+                    if params.add_id_feature[i]:
+                        face = result.extra['main_face_rec']
+                        feature = model_manager.id_mlp(face.cuda())
+                    else:
+                        feature = None
                 features.append(feature)
 
             ## 3.5 run pipelines
@@ -98,8 +110,11 @@ def handle_latent_couple(
     ### 4. after detailer
     features = []
     for i, r in enumerate(guidance_results.id_reference_results[1:]):
-        face = r.extra['main_face_rec']
-        face = torch.tensor(face).cuda()
+        if params.add_id_feature[1:][i]:
+            face = r.extra['main_face_rec']
+            face = torch.tensor(face).cuda()
+        else:
+            face = None
         features.append(face)
     if len(ad_lora_configs) == 0:
         ad_lora_configs = lora_configs[1:]
@@ -123,8 +138,8 @@ def detailer(
     request_id = params.uniq_id
     with model_manager.lock_ad:
         common = {
-            "num_inference_steps": 20,
-            'strength': 0.45
+            "num_inference_steps": 30,
+            'strength': 0.5
         }
         result = init_image
         client = FaceClient('192.168.110.102')
