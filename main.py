@@ -39,9 +39,12 @@ def get_lora_path(name):
 async def handle_get_latent_couple(request: Request):
     try:
         ### 1. setup generation params
+        # torch.cuda.empty_cache()
         data = await request.json()
         params = LatentCoupleWithControlTaskParams(**data)
+        logger.info("ad_loras: %s" % (params.ad_lora_configs, ))
         lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.lora_configs]
+        ad_lora_configs = [{ get_lora_path(k): v for k, v in config.items()} for config in params.ad_lora_configs]
         params.random_seed = random.randrange(0, 1<<63) if params.random_seed < 0 else params.random_seed
         request_obj = params.json
         for k in ('id_reference_img', 'condition_img_str', ):
@@ -50,7 +53,13 @@ async def handle_get_latent_couple(request: Request):
         dump_request_to_file(params, 'log')
         if len(params.prompt) != len(model_manager.pipelines) or len(params.negative_prompt) != len(model_manager.pipelines):
             raise HTTPException(status_code=400, detail="prompt or negative prompt must be a list of %d" % (len(model_manager.pipelines), ))
-        return handle_latent_couple(model_manager, params, lora_configs, log_dir=log_dir).json
+        return handle_latent_couple(
+            model_manager, 
+            params, 
+            lora_configs,
+            ad_lora_configs, 
+            log_dir=log_dir
+        ).json
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
