@@ -1,3 +1,4 @@
+import copy
 import traceback
 
 import cv2
@@ -29,15 +30,18 @@ def handle_latent_couple(
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
     if params.latent_pos is None:
-        r = guidance_results.guidance_image_results
-        faces = r.get_detection('face', topk=2)
-        mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
-        mid = int(mid)
-        params.latent_pos = [
-            '1:1-0:0',
-            '1:32-0:0-%s' % (mid, ),
-            '1:32-0:%s-32' % (mid, )
-        ]
+        # r = guidance_results.guidance_image_results
+        # faces = r.get_detection('face', topk=2)
+        # mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
+        # mid = int(mid)
+        # params.latent_pos = [
+        #     '1:1-0:0',
+        #     '1:32-0:0-%s' % (mid, ),
+        #     '1:32-0:%s-32' % (mid, )
+        # ]
+        couple_mask_list = guidance_results.latent_masks
+    else:
+        couple_mask_list = None
 
     ### 3. latent couple preprocess
     with model_manager.lock_lc:
@@ -75,11 +79,18 @@ def handle_latent_couple(
                     else:
                         feature = None
                 features.append(feature)
+            
+            prompts = copy.deepcopy(params.prompt)
+            for i, f in enumerate(features):
+                if f is not None and i > 0:
+                    prompts[i] = params.prompt[0]
+                elif f is None and i > 0:
+                    prompts[i] += params.prompt[0]
 
             ## 3.5 run pipelines
             result, debugs = latent_couple_with_control(
                 pipes = model_manager.pipelines,
-                prompts = params.prompt,
+                prompts = prompts,
                 image = guidance_results.annotations,
                 couple_pos = params.latent_pos,
                 couple_weights = params.latent_mask_weight, 
@@ -97,7 +108,10 @@ def handle_latent_couple(
                 control_preprocess_mode = params.control_preprocess_mode,
                 generator = torch.Generator(device='cuda').manual_seed(params.random_seed),
                 control_scale_decay_ratio = params.control_scale_decay_ratio,
-                debug_steps=params.debug_steps
+                latent_couple_min_ratio=params.latent_couple_min_ratio,
+                latent_couple_max_ratio=params.latent_couple_max_ratio,
+                couple_mask_list=couple_mask_list,
+                debug_steps=params.debug_steps,
             )
         except Exception as e:
             traceback.print_exc()
