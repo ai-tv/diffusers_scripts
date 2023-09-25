@@ -107,6 +107,7 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     negative_prompt: T.List[str]
     base_model: T.List[str]
     lora_configs: T.List[T.Dict[str, float]]
+    use_main_prompt_for_branches: bool = True
     ad_lora_configs: T.List[T.Dict[str, float]] = field(default_factory=list)
     id_reference_img: T.List = field(default_factory=lambda:[None, None, None])
     add_id_feature: T.List = field(default_factory=lambda:[False, False, False])

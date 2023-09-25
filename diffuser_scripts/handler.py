@@ -17,6 +17,7 @@ from .utils.long_prompt_weighting import get_weighted_text_embeddings
 from .pipelines.couple import latent_couple_with_control
 from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams, Txt2ImageParams
 
+
 @torch.no_grad()
 def handle_latent_couple(
     model_manager: LatentCouplePipelinesManager,
@@ -81,11 +82,12 @@ def handle_latent_couple(
                 features.append(feature)
             
             prompts = copy.deepcopy(params.prompt)
-            for i, f in enumerate(features):
-                if f is not None and i > 0:
-                    prompts[i] = params.prompt[0]
-                elif f is None and i > 0:
-                    prompts[i] += params.prompt[0]
+            if params.use_main_prompt_for_branches:
+                for i, f in enumerate(features):
+                    if f is not None and i > 0:
+                        prompts[i] = params.prompt[0]
+                    elif f is None and i > 0:
+                        prompts[i] += params.prompt[0]
 
             ## 3.5 run pipelines
             result, debugs = latent_couple_with_control(
@@ -171,25 +173,4 @@ def detailer(
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(
                     model_manager.ad_pipeline,
                     prompt="%s, young, good-looking, best quality" % params.prompt[1+i], 
-                    uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
-                )
-                if f is not None:
-                    f = model_manager.detailer_id_mlp(f)
-                    p = torch.cat([f[None, ], text_embedding, ], dim=1)
-                    u = torch.cat([f[None, ], uncond_embedding], dim=1)
-                else:
-                    p = text_embedding
-                    u = uncond_embedding
-                inpaint_args = [{
-                    "prompt_embeds": p,
-                    "negative_prompt_embeds": u,
-                }]
-                result = model_manager.ad_pipeline(
-                    common = common,
-                    images = result,
-                    inpaint_only = inpaint_args,
-                    detectors = [lambda image: create_mask_from_bbox([dets[i].bbox], image.size)]
-                ).images[0]
-            finally:
-                model_manager.unload_lora_for_detailer()
-        return result
+                    uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad
