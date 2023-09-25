@@ -1,0 +1,19 @@
+{
+    "lora_configs": [
+        {}, 
+        {}, 
+        {}
+    ],
+    "ad_lora_configs": [
+        {},
+        {}
+    ],
+    "sampler": "sde-dpm++",
+    "control_model_name": "/mnt/lg102/zwshi/.cache/huggingface/hub/models--lllyasviel--control_v11p_sd15_canny/snapshots/115a470d547982438f70198e353a921996e2e819/",
+    "control_annotators": "canny",
+    "control_mode": "prompt",
+    "latent_couple_min_ratio": 0.1,
+    "latent_couple_max_ratio": 0.9,
+    "latent_mask_weight": [0.7, 0.3, 0.3],
+    "latent_mask_weight_decay": 0.03
+}

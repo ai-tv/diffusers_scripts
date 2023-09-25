@@ -1,0 +1,17 @@
+{
+    "lora_configs": [
+        {}, {}, {}
+    ],
+    "ad_lora_configs": [
+        {"036_cropface_relax1.0-000015": 1},
+        {"036_cropface_relax1.0-000015": 1}
+    ],
+    "sampler": "dpm++",
+    "control_model_name": "/mnt/lg102/zwshi/projects/core/diffusers/experiments/controlnet/canny/e002/output/checkpoint-50000/controlnet/",
+    "control_annotators": "canny",
+    "control_mode": "prompt",
+    "latent_couple_min_ratio": 0,
+    "latent_couple_max_ratio": 1,
+    "latent_mask_weight": [1.0, 0.0, 0.0],
+    "latent_mask_weight_decay": 0.0
+}

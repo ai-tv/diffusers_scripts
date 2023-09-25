@@ -1,0 +1,26 @@
+{
+    "lora_configs": [
+        {"057_face_clean-000002": 1.0}, 
+        {"057_face_clean-000002": 1.0}, 
+        {"057_face_clean-000002": 1.0}
+    ],
+    "ad_lora_configs": [
+        {"036_cropface_relax1.0-000015": 1},
+        {"036_cropface_relax1.0-000015": 1}
+    ],
+    "sampler": "dpm++",
+    "control_model_name": [
+        "/mnt/lg102/zwshi/projects/core/diffusers/experiments/controlnet/canny/e002/output/checkpoint-50000/controlnet/",
+        "/mnt/lg102/zwshi/projects/core/diffusers/experiments/controlnet/hand/e007/output/checkpoint-150000/controlnet/"
+    ],
+    "control_annotators": [
+        "canny",
+        "hand"
+    ],
+    "control_guidance_scale": [0.7, 0.6],
+    "control_mode": "balance",
+    "latent_couple_min_ratio": 0.1,
+    "latent_couple_max_ratio": 0.9,
+    "latent_mask_weight": [0.7, 0.3, 0.3],
+    "latent_mask_weight_decay": 0.03
+}

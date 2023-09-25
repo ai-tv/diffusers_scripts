@@ -1,0 +1,19 @@
+{
+    "lora_configs": [
+        {"059_face_clean_crop": 0}, 
+        {"059_face_clean_crop": 1.0}, 
+        {"059_face_clean_crop": 1.0}
+    ],
+    "ad_lora_configs": [
+        {"036_cropface_relax1.0-000015": 1},
+        {"036_cropface_relax1.0-000015": 1}
+    ],
+    "sampler": "dpm++",
+    "control_model_name": "/mnt/lg102/zwshi/projects/core/diffusers/experiments/controlnet/canny/e002/output/checkpoint-50000/controlnet/",
+    "control_annotators": "canny",
+    "control_mode": "balance",
+    "latent_couple_min_ratio": 0.1,
+    "latent_couple_max_ratio": 0.9,
+    "latent_mask_weight": [0.5, 0.5, 0.5],
+    "latent_mask_weight_decay": 0.0
+}
