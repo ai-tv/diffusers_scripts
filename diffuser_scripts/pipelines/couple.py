@@ -13,13 +13,15 @@ from diffusers.pipelines.controlnet import MultiControlNetModel
 from diffuser_scripts.utils import detectmap_proc
 from diffuser_scripts.utils.long_prompt_weighting import get_weighted_text_embeddings
 
-def in_range(i, s):
+
+def get_start_end(s, divider, size):
     if '-' in s:
         s, e = map(int, s.split('-'))
-        return i >= s and i < e
     else:
-        return i == int(s)
-
+        s = int(s)
+        e = s+1
+    return int(s/divider*size), int(e/divider*size)
+        
 
 def make_mask_list(
     pos=["1:1-0:0","1:2-0:0","1:2-0:1"], 
@@ -27,45 +29,22 @@ def make_mask_list(
     width: int = 1024,
     height: int = 768
 ):
-    mask_list = []
     batch_size = 1
+    h = height // 8
+    w = width // 8
     device = 'cuda'
+    
+    mask_list = []
     for idx, _pos in enumerate(pos):
         pos_base = _pos.split("-", maxsplit=1)
         pos_dev = pos_base[0].split(":")
         pos_pos = pos_base[1].split(":")
-        one_filter = None
-        zero_f = False                                      
-        # dynamic weighting      
-        weight = weights[idx]
-        for y in range(int(pos_dev[0])):
-            one_line = None
-            zero = False
-            for x in range(int(pos_dev[1])):
-                if in_range(y, pos_pos[0]) and in_range(x, pos_pos[1]):
-                    if zero:
-                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32) * weight
-                        one_line = torch.cat((one_line, one_block), 3)
-                    else:
-                        zero = True
-                        one_block = torch.ones(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32) * weight
-                        one_line = one_block
-                else:
-                    if zero:
-                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32)
-                        one_line = torch.cat((one_line, one_block), 3)
-                    else:
-                        zero = True
-                        one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) // int(pos_dev[1])).to(device).to(torch.float32)
-                        one_line = one_block
-            one_block = torch.zeros(batch_size, 4, (height//8) // int(pos_dev[0]), (width//8) - one_line.size()[3]).to(device).to(torch.float32)
-            one_line = torch.cat((one_line, one_block), 3)
-            if zero_f:
-                one_filter = torch.cat((one_filter, one_line), 2)
-            else:
-                zero_f = True
-                one_filter = one_line
-        mask_list.append(one_filter)
+        divider_y, divider_x = map(int, pos_dev)
+        pos_y, pos_x  = pos_pos
+        x1, x2 = get_start_end(pos_x, divider_x, w)
+        mask = torch.zeros(batch_size, 4, h, w).to(device).to(torch.float32)
+        mask[..., x1:x2] = weights[idx]
+        mask_list.append(mask)
     return mask_list
 
 

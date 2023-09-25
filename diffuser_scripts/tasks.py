@@ -84,7 +84,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     control_image_type: str = 'processed'
     control_annotators: str = 'canny'
     control_model_name: T.Union[str, T.List] = '/mnt/lg102/zwshi/.cache/huggingface/hub/models--lllyasviel--control_v11p_sd15_canny/snapshots/115a470d547982438f70198e353a921996e2e819/'
-    control_mode: str = 'prompt' # [prompt, balance, control] as in webui
+    control_mode: str = 'balance' # [prompt, balance, control] as in webui
     control_guidance_scale: T.Union[float, T.List[float]] = 1.0
     control_guidance_start: T.Union[float, T.List[float]] = 0.0
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
@@ -117,6 +117,10 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     latent_mask: T.List[str] = None
     latent_couple_min_ratio: float = 0.1
     latent_couple_max_ratio: float = 0.9
+    latent_cls_weight: float = 0.6
+    latent_neg_cls_weight: float = 0.1
+    latent_bg_weight: float = 0.3
+    latent_mode: str = "division"
 
     @property
     def json(self):

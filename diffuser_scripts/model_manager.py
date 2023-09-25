@@ -212,7 +212,7 @@ class LatentCouplePipelinesManager:
             return self.controlnet_names == controlnet_path
         elif isinstance(controlnet_path, list):
             return isinstance(self.controlnet_names, list) and \
-                all([a == b for a, b in sorted(controlnet_path, self.controlnet_names)])
+                all([a == b for a, b in zip(controlnet_path, self.controlnet_names)])
 
     def set_controlnet(self, controlnet_path: T.Union[str, list]):
         if self.is_controlnet_same(controlnet_path):
@@ -227,13 +227,14 @@ class LatentCouplePipelinesManager:
                 control_model = retry(ControlNetModel.from_pretrained)(path, torch_dtype=torch.float16)
                 multicontrol.append(control_model)
             control_model = MultiControlNetModel(multicontrol)
+        self.controlnet_names = controlnet_path
         control_model.to(self.pipelines[0].device)
         for pipe in self.pipelines:
             pipe.controlnet = control_model
 
     def set_sampler(self, sampler: str):
         if sampler in default_samplers:
-            # logger.info("setting sampler %s" % (sampler, ))
+            logger.info("setting sampler %s" % (sampler, ))
             for pipe in self.pipelines:
                 pipe.scheduler = copy.deepcopy(default_samplers[sampler])
         elif isinstance(sampler, SchedulerMixin):
@@ -244,6 +245,7 @@ class LatentCouplePipelinesManager:
 
     def set_ad_sampler(self, sampler: str):
         if sampler in default_samplers:
+            logger.info("setting ad sampler %s" % (sampler, ))
             self.ad_pipeline.scheduler = copy.deepcopy(default_samplers[sampler])
         elif isinstance(sampler, SchedulerMixin):
             self.ad_pipeline.scheduler = copy.deepcopy(sampler)
