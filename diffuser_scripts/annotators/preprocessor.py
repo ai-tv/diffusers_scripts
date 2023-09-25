@@ -6,16 +6,34 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image
+from controlnet_aux import LineartDetector
+
 from sbp.vision.protocal import ImageResult
+from sbp.utils.functions import retry
 from sbp.nn.app.ultralytics.segment import YoloMaskPredictor
 from sbp.nn.app.client import FaceClient
 from sbp.nn.utils import encode_pos_scale
 
 from diffuser_scripts.annotators.dwpose import DWposeDetector
 from diffuser_scripts.annotators.canny import canny
+from diffuser_scripts.annotators.hand import Hand
 from diffuser_scripts.utils.logger import dump_image_to_dir, dump_request_to_file
 from diffuser_scripts.utils.decode import decode_image_b64, encode_image_b64, encode_bytes_b64, decode_image
 from diffuser_scripts.utils.image_process import detectmap_proc
+from diffuser_scripts.utils.logger import logger
+
+
+def pil2np_wrapper(f):
+    def initializer(**args):
+        processor = f(**args)
+        def new_f(image):
+            image = Image.fromarray(image[..., ::-1])
+            image = processor(image)
+            image = np.array(image)
+            return image
+        return new_f
+    return initializer
+
 
 
 def file2base64(path):
@@ -24,7 +42,7 @@ def file2base64(path):
         return encoded
 
 
-def process_masks(masks, h, w, weights=0.7, device='cuda'):
+def process_masks(masks, h, w, cls_weight=0.6, neg_cls_weight=0.1, bg_weight=0.3, device='cuda'):
     new_masks = []
     xs = []
     union = None
@@ -35,13 +53,15 @@ def process_masks(masks, h, w, weights=0.7, device='cuda'):
 
     for i, mask in enumerate(new_masks):
         mask = np.where(mask > 0, 
-            mask * weights, 
+            mask * cls_weight, 
             np.where(union > 0, 
-                np.zeros_like(mask), 
-                np.ones_like(mask) * (1 - weights) / 2))
+                np.ones_like(mask) * neg_cls_weight, 
+                np.ones_like(mask) * bg_weight))
         new_masks[i] = mask
 
     new_masks = [1-sum(new_masks)] + list(new_masks)
+    for i, m in enumerate(new_masks):
+        new_masks[i] = np.tile(m[None, ..., 0], (4, 1, 1))
     return [
         torch.FloatTensor(mask[None, ...]).to(device)
         for mask in new_masks
@@ -60,6 +80,8 @@ class GuidanceProcessor:
     _annotators = {
         'canny': (lambda : canny),
         'dwpose': DWposeDetector,
+        'hand': Hand,
+        'lineart': pil2np_wrapper(retry()(LineartDetector.from_pretrained))
     }  
 
     def __init__(
@@ -77,6 +99,7 @@ class GuidanceProcessor:
             for n in control_annotator_names
         ]
         self.subject_locator = YoloMaskPredictor(subject_locator)
+        self.caption_model = None
         # self.id_mlp = torch.load(face_id_mlp).cuda().eval()
         # self.ad_id_mlp = torch.load(face_id_mlp).cuda().eval()
 
@@ -91,11 +114,16 @@ class GuidanceProcessor:
         _, image = detectmap_proc(image, height, width)
         image_b64 = encode_image_b64(image)
 
+        logger.info("request guidance face ...")
         image_result = self.face_detecor.request_face(image_b64)
+
         annotation_maps = {}
         for n, annotator in zip(
             self.control_annotator_names, self.control_annotators):
+            logger.info("do controlnet annotation %s ..." % n)
             annotation_maps[n] = annotator(image)
+
+        logger.info("do person segmentation ...")
         segment_results = self.subject_locator.get_obj_segment_result(image)
         image_result.detection_results.extend(segment_results)
         image_result.annotation_maps = annotation_maps
@@ -119,11 +147,14 @@ class GuidanceProcessor:
             rec = torch.zeros((1, 512), dtype=torch.float32).cuda()
             return ImageResult(extra={'main_face_rec': rec})
         else:
-            raise ValueError        
+            raise ValueError
+
+        logger.info("request reference face ...")        
         image_result = self.face_detecor.request_face(image_b64)
         detection = image_result.get_max_detection('face')
         rec = torch.FloatTensor(detection.rec_feature).cuda()[None, ...]
         image_result.extra['main_face_rec'] = rec
+        logger.info("got face encode ...")        
         # image_result.extra['main_face_encode'] = self.id_mlp(rec)
         # image_result.extra['main_face_encode_ad'] = self.ad_id_mlp(rec)
         return image_result
@@ -142,7 +173,15 @@ class GuidanceProcessor:
             image_result = self.infer_guidance_image(params.condition_img_str, params.height, params.width)
             image_result.height, image_result.width = image.shape[:2]
             segments = image_result.get_detection('person', topk=2)        
-            latent_mask = process_masks([seg.mask for seg in segments], params.height, params.width, weights=0.7)
+            latent_mask = process_masks(
+                [seg.mask for seg in segments], 
+                params.height, params.width, 
+                cls_weight = params.latent_cls_weight,
+                neg_cls_weight = params.latent_neg_cls_weight,
+                bg_weight = params.latent_bg_weight
+            )
+            for m in latent_mask:
+                logger.info("latent mask: %s" %(m.shape, ))
             dump_image_to_dir(image, log_dir, name='%s_guidance.jpg' % request_id)
             if isinstance(annotator_names, str):
                 control_image = image_result.annotation_maps[annotator_names]
