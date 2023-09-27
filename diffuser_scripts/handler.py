@@ -72,11 +72,11 @@ def handle_latent_couple(
                             pos = torch.tensor(pos[None, ...]).cuda()
                             face = torch.cat([pos, face], dim=1)
                             ph[j] = face
-                    feature = model_manager.id_mlp(ph)
+                    feature = model_manager.id_mlp['main'][i](ph)
                 else:
                     if params.add_id_feature[i]:
                         face = result.extra['main_face_rec']
-                        feature = model_manager.id_mlp(face.cuda())
+                        feature = model_manager.id_mlp['main'][i](face.cuda())
                     else:
                         feature = None
                 features.append(feature)
@@ -173,4 +173,25 @@ def detailer(
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(
                     model_manager.ad_pipeline,
                     prompt="%s, young, good-looking, best quality" % params.prompt[1+i], 
-                    uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad
+                    uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
+                )
+                if f is not None:
+                    f = model_manager.detailer_id_mlp(f)
+                    p = torch.cat([f[None, ], text_embedding, ], dim=1)
+                    u = torch.cat([f[None, ], uncond_embedding], dim=1)
+                else:
+                    p = text_embedding
+                    u = uncond_embedding
+                inpaint_args = [{
+                    "prompt_embeds": p,
+                    "negative_prompt_embeds": u,
+                }]
+                result = model_manager.ad_pipeline(
+                    common = common,
+                    images = result,
+                    inpaint_only = inpaint_args,
+                    detectors = [lambda image: create_mask_from_bbox([dets[i].bbox], image.size)]
+                ).images[0]
+            finally:
+                model_manager.unload_lora_for_detailer()
+        return result

@@ -188,8 +188,8 @@ class LatentCouplePipelinesManager:
         self.lora_loader = LoraLoader()
         self.lora_status = [collections.defaultdict(lambda : 0.0) for _ in self.pipelines]
         self.ad_lora_status = collections.defaultdict(lambda : 0.0)
-        self.id_mlp_names = {'detailer': None, 'main': None}
-        self.id_mlp = None
+        self.id_mlp_names = {'detailer': None, 'main': [None, None, None]}
+        self.id_mlp = {'detailer': None, 'main': [None, None, None]}
         self.detailer_id_mlp = None
         self.lock_lc = Lock()
         self.lock_ad = Lock()
@@ -263,15 +263,17 @@ class LatentCouplePipelinesManager:
             self.lora_loader.load_lora_weights(i, lora, weight, 'cuda', torch.float32)
     
     def load_loras_for_pipelines(self, lora_configs):
-        mlp_path = [k + '_mlp.pt' for lora in lora_configs for k in lora if os.path.exists(k + '_mlp.pt')]
-        mlp_path = list(set(mlp_path))
-        if len(mlp_path) not in (0, 1):
-            raise ValueError("different multi-person lora not supported yet")
-        elif len(mlp_path) == 1:
-            if mlp_path[0] != self.id_mlp_names['main']:
-                logger.info("loading idmlp %s for main pipe" % (mlp_path[0], ))
-                self.id_mlp_names['main'] = mlp_path[0]
-                self.id_mlp = torch.load(self.id_mlp_names['main']).cuda().eval()
+        mlp_paths = [[k + '_mlp.pt' for k in lora if os.path.exists(k + '_mlp.pt')] for lora in lora_configs]
+        for i, mlp_path in enumerate(mlp_paths):
+            if len(mlp_path) == 0:
+                continue
+            elif len(mlp_path) > 1:
+                logger.warning("different multi-person lora not supported yet, use first corresponding mlp for lora ...")
+            
+            mlp_path = mlp_path[0]
+            self.id_mlp_names['main'][i] = mlp_path
+            self.id_mlp['main'][i] = torch.load(mlp_path).cuda().eval()
+
         for i, lora_config in enumerate(lora_configs):
             for k, v in lora_config.items():
                 self.load_lora(i, k, v)
@@ -286,7 +288,7 @@ class LatentCouplePipelinesManager:
         mlp_path = [k + '_mlp.pt' for k in lora_config if os.path.exists(k + '_mlp.pt')]
         mlp_path = list(set(mlp_path))
         if len(mlp_path) not in (0, 1):
-            raise ValueError("different multi-person lora not supported yet")
+            logger.warning("different multi-person lora not supported yet, use first corresponding mlp for lora ...")
         elif len(mlp_path) == 1:
             if mlp_path[0] != self.id_mlp_names['detailer']:
                 logger.info("loading idmlp %s for detailer" % (mlp_path[0], ))
