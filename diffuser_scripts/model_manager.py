@@ -120,17 +120,6 @@ def load_latent_couple_pipeline(
         local_files_only=True,
         safety_checker = None
     )
-    scheduler = DPMSolverMultistepScheduler(        
-        num_train_timesteps = 1000,
-        beta_start = 8.5e-4,
-        beta_end = 1.2e-2,
-        beta_schedule = 'scaled_linear',
-        algorithm_type = 'dpmsolver++',
-        # use_karras_sigmas = True
-    )
-    # scheduler.config.algorithm_type = 'sde-dpmsolver++'
-    # scheduler = DPMSolverMultistepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
-    # scheduler = DPMSolverSinglestepScheduler.from_config(main_pipe.scheduler.config, use_karras_sigmas=True)
     pipes = []
     for i, name in enumerate(config.model_names):
         logger.info("setting pipe %d" % (i, ))
@@ -153,7 +142,7 @@ def load_latent_couple_pipeline(
             vae = main_pipe.vae,
             unet = unet,
             controlnet = control_model,
-            scheduler = copy.deepcopy(scheduler),
+            scheduler = copy.deepcopy(default_samplers['dpm++']),
             safety_checker = None,
             feature_extractor = None,
             requires_safety_checker = False
