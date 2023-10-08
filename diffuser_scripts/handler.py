@@ -164,12 +164,10 @@ def examine_image(
     unpass_reasons = []
     extras = collections.defaultdict(list)
     image_result = face_client.request_face(encode_image_b64(image))
-    dets = image_result.get_detection('face', topk=5, topk_order='area', return_order='center_x')
-    if len(dets) > 2:
-        ratio1 = dets[0].area / dets[1].area
-        ratio2 = dets[1].area / dets[2].area 
+    dets = image_result.get_detection('face', topk=3, topk_order='area', return_order='center_x')
+    if len(dets) != 2:
         is_pass = False
-        unpass_reasons.append('extra face')
+        unpass_reasons.append('missing or extra face')
     for i, (det, result, gdet) in enumerate(zip(
         dets[:2],
         guidance_results.id_reference_results[1:],
