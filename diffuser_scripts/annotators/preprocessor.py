@@ -92,7 +92,7 @@ class GuidanceProcessor:
         face_service_host = '192.168.110.102',
         face_id_mlp = None
     ):
-        self.face_detecor = FaceClient(face_service_host)
+        self.face_detector = FaceClient(face_service_host)
         self.control_annotator_names = control_annotator_names
         self.control_annotators = [
             self._annotators[n](**control_annotator_args.get(n, {})) 
@@ -115,7 +115,7 @@ class GuidanceProcessor:
         image_b64 = encode_image_b64(image)
 
         logger.info("request guidance face ...")
-        image_result = self.face_detecor.request_face(image_b64)
+        image_result = self.face_detector.request_face(image_b64)
 
         annotation_maps = {}
         for n, annotator in zip(
@@ -133,6 +133,8 @@ class GuidanceProcessor:
             image_result.extra['positional_encoding'].append(
                 encode_pos_scale(face.bbox, h, w, dim=64)[None, ...]
             )
+        image_result.height = h
+        image_result.width = w
         return image_result
 
     @torch.no_grad()
@@ -150,7 +152,7 @@ class GuidanceProcessor:
             raise ValueError
 
         logger.info("request reference face ...")        
-        image_result = self.face_detecor.request_face(image_b64)
+        image_result = self.face_detector.request_face(image_b64)
         detection = image_result.get_max_detection('face')
         rec = torch.FloatTensor(detection.rec_feature).cuda()[None, ...]
         image_result.extra['main_face_rec'] = rec
@@ -171,7 +173,6 @@ class GuidanceProcessor:
         elif params.control_image_type == 'original':
             annotator_names = params.control_annotators
             image_result = self.infer_guidance_image(params.condition_img_str, params.height, params.width)
-            image_result.height, image_result.width = image.shape[:2]
             segments = image_result.get_detection('person', topk=2)        
             latent_mask = process_masks(
                 [seg.mask for seg in segments], 
