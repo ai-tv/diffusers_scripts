@@ -99,6 +99,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     def condition_image_np(self):
         return decode_image_b64(self.condition_img_str)
 
+
 @dataclass
 class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
     """ request for latent couple pipeline with controlnet """
@@ -136,11 +137,27 @@ class LatentCoupleWithControlTaskParams(Txt2ImageWithControlParams):
 
 
 @dataclass
+class ExamineResult:
+
+    is_pass: bool
+    face_count: int
+    unpass_reasons: T.List = field(default_factory=list)
+    face_sim_scores: T.List = field(default_factory=list)
+    body_quality_scores: T.List = field(default_factory=list)
+    sfw_score: float = 1.0
+    extras: T.Dict = field(default_factory=dict)
+
+    @property
+    def json(self):
+        return asdict(self)
+
+@dataclass
 class ImageGenerationResult:
     """ image generation result """
 
     task: Txt2ImageParams
     result_image_str: str
+    examine_result: ExamineResult
     app_verion: str = __version__
     status: int = 0
     status_message: str = "ok"
@@ -150,20 +167,24 @@ class ImageGenerationResult:
     def from_task_and_image(
         task: Txt2ImageParams,
         image: T.Union[Image.Image, np.ndarray],
-        intermediate_states: T.List[T.Union[Image.Image, np.ndarray]] = []
+        intermediate_states: T.List[T.Union[Image.Image, np.ndarray]] = [],
+        examine_result: ExamineResult = None
     ):
         return ImageGenerationResult(
             task = task,
             result_image_str = encode_image_b64(image),
-            intermediate_states = [encode_image_b64(i) for i in intermediate_states]
+            intermediate_states = [encode_image_b64(i) for i in intermediate_states],
+            examine_result = examine_result
         )
 
     @staticmethod
     def from_json(obj):
         task = obj['task']
+        examine_result = obj['examine_result']
         return ImageGenerationResult(
             LatentCoupleWithControlTaskParams(**task),
-            result_image_str=obj['result_image_str'],
+            examine_result=ExamineResult(**examine_result),
+            result_image_str = obj['result_image_str'],
             intermediate_states = obj['intermediate_states']
         )
 

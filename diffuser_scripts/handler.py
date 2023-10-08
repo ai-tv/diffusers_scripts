@@ -1,5 +1,6 @@
 import copy
 import traceback
+import collections
 
 import cv2
 import torch
@@ -15,7 +16,7 @@ from .utils.logger import logger, dump_image_to_dir
 from .utils.decode import encode_image_b64
 from .utils.long_prompt_weighting import get_weighted_text_embeddings
 from .pipelines.couple import latent_couple_with_control
-from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams, Txt2ImageParams
+from .tasks import ImageGenerationResult, LatentCoupleWithControlTaskParams, Txt2ImageParams, ExamineResult
 
 
 @torch.no_grad()
@@ -30,17 +31,18 @@ def handle_latent_couple(
 
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
-    if params.latent_pos is None:
-        # r = guidance_results.guidance_image_results
-        # faces = r.get_detection('face', topk=2)
-        # mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
-        # mid = int(mid)
-        # params.latent_pos = [
-        #     '1:1-0:0',
-        #     '1:32-0:0-%s' % (mid, ),
-        #     '1:32-0:%s-32' % (mid, )
-        # ]
-        couple_mask_list = guidance_results.latent_masks
+    if params.latent_pos is None or True:
+        r = guidance_results.guidance_image_results
+        faces = r.get_detection('face', topk=2)
+        mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
+        mid = int(mid)
+        params.latent_pos = [
+            '1:1-0:0',
+            '1:32-0:0-%s' % (mid, ),
+            '1:32-0:%s-32' % (mid, )
+        ]
+        logger.info("use pos %s" % (params.latent_pos, ))
+        couple_mask_list = None #guidance_results.latent_masks
     else:
         couple_mask_list = None
 
@@ -55,8 +57,8 @@ def handle_latent_couple(
             model_manager.set_controlnet(controlnet_path=params.control_model_name)
 
             ## 3.3 set sampler
-            if params.sampler is not None:
-                model_manager.set_sampler(params.sampler)
+            # if params.sampler is not None:
+            #     model_manager.set_sampler(params.sampler)
 
             ## 3.4 set extra conditions
             r = guidance_results.guidance_image_results
@@ -134,7 +136,13 @@ def handle_latent_couple(
         features.append(face)
     if len(ad_lora_configs) == 0:
         ad_lora_configs = lora_configs[1:]
-    result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs)
+
+    client = model_manager.preprocessor.face_detector
+    image_result = client.request_face(encode_image_b64(result))
+    dets = image_result.get_detection('face', topk=5, topk_order='area', return_order='center_x')
+    result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs, dets=dets[:2])
+    examine_result = examine_image(result, guidance_results, client)
+    logger.info("%s examine: %s" % (request_id, examine_result))
 
     ### 5. parse and save output and return
     logger.info("%s generation succeed for %s" % (request_id, params.prompt, ))
@@ -142,14 +150,64 @@ def handle_latent_couple(
     if result is None:
         return {"result": result}
     else:
-        return ImageGenerationResult.from_task_and_image(params, result, debugs)
+        return ImageGenerationResult.from_task_and_image(
+            params, result, debugs, examine_result)
+
+
+def examine_image(
+    image,
+    guidance_results,
+    face_client,
+):
+    is_pass = True
+    face_scores = []
+    unpass_reasons = []
+    extras = collections.defaultdict(list)
+    image_result = face_client.request_face(encode_image_b64(image))
+    dets = image_result.get_detection('face', topk=5, topk_order='area', return_order='center_x')
+    if len(dets) > 2:
+        ratio1 = dets[0].area / dets[1].area
+        ratio2 = dets[1].area / dets[2].area 
+        is_pass = False
+        unpass_reasons.append('extra face')
+    for i, (det, result, gdet) in enumerate(zip(
+        dets[:2],
+        guidance_results.id_reference_results[1:],
+        guidance_results.guidance_image_results.get_detection('face', topk=2)
+    )):
+        f = result.extra['main_face_rec'].cpu().numpy()[0]
+        fnorm = (f ** 2).sum() ** 0.5
+        if fnorm == 0: # given `None` as ref will provide zero feature 
+            continue
+        f = f / fnorm
+        s = float(det.norm_feature.dot(f))
+        face_scores.append(s)
+        if s < 0.4:
+            is_pass = False
+            unpass_reasons.append('face %d low similarity' % i)
+        iou = det.compute_iou(gdet)
+        extras['face_iou'].append(iou)
+        if iou < 0.6:
+            is_pass = False
+            unpass_reasons.append('face %d low iou with guidance' % i)
+        
+    examine = ExamineResult(
+        face_count=len(dets),
+        face_sim_scores=face_scores,
+        is_pass = is_pass,
+        unpass_reasons = unpass_reasons,
+        extras = dict(extras)
+    )
+    return examine
 
 
 def detailer(
     model_manager: LatentCouplePipelinesManager, 
     params: Txt2ImageParams, 
     init_image: Image, 
-    features, lora_configs: list
+    features, 
+    lora_configs: list,
+    dets: list = []
 ):
     request_id = params.uniq_id
     with model_manager.lock_ad:
@@ -158,12 +216,9 @@ def detailer(
             'strength': 0.5
         }
         result = init_image
-        client = FaceClient('192.168.110.102')
-        image_result = client.request_face(encode_image_b64(result))
-        dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
         logger.info("%s detailing %d faces..." % (request_id, len(dets) ))
-        if params.sampler is not None:
-            model_manager.set_ad_sampler(params.sampler)
+        # if params.sampler is not None:
+        #     model_manager.set_ad_sampler(params.sampler)
         for i, (f, lora) in enumerate(zip(features, lora_configs)):
             if i >= len(dets):
                 break
