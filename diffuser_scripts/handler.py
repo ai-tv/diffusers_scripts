@@ -31,7 +31,7 @@ def handle_latent_couple(
 
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
-    if params.latent_pos is None or True:
+    if params.latent_pos is None:
         r = guidance_results.guidance_image_results
         faces = r.get_detection('face', topk=2)
         mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
