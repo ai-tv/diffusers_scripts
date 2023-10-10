@@ -31,20 +31,21 @@ def handle_latent_couple(
 
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
-    if params.latent_pos is None:
-        r = guidance_results.guidance_image_results
-        faces = r.get_detection('face', topk=2)
+    r = guidance_results.guidance_image_results
+    faces = r.get_detection('face', topk=2)
+    if len(faces) == 2:
         mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
         mid = int(mid)
-        params.latent_pos = [
-            '1:1-0:0',
-            '1:32-0:0-%s' % (mid, ),
-            '1:32-0:%s-32' % (mid, )
-        ]
-        logger.info("use pos %s" % (params.latent_pos, ))
-        couple_mask_list = None #guidance_results.latent_masks
     else:
-        couple_mask_list = None
+        mid = 16
+    params.latent_pos = [
+        '1:1-0:0',
+        '1:32-0:0-%s' % (mid, ),
+        '1:32-0:%s-32' % (mid, )
+    ]
+    logger.info("use pos %s" % (params.latent_pos, ))
+    couple_mask_list = None #guidance_results.latent_masks
+
 
     ### 3. latent couple preprocess
     with model_manager.lock_lc:
@@ -139,8 +140,8 @@ def handle_latent_couple(
 
     client = model_manager.preprocessor.face_detector
     image_result = client.request_face(encode_image_b64(result))
-    dets = image_result.get_detection('face', topk=5, topk_order='area', return_order='center_x')
-    result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs, dets=dets[:2])
+    dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
+    result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs, dets=dets)
     examine_result = examine_image(result, guidance_results, client)
     logger.info("%s examine: %s" % (request_id, examine_result))
 
@@ -164,30 +165,33 @@ def examine_image(
     unpass_reasons = []
     extras = collections.defaultdict(list)
     image_result = face_client.request_face(encode_image_b64(image))
-    dets = image_result.get_detection('face', topk=3, topk_order='area', return_order='center_x')
+    dets = image_result.get_detection('face', topk=3, topk_order='area', return_order='area')
+    if len(dets) > 2 and dets[0].area / dets[1].area < 0.2:
+        dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
     if len(dets) != 2:
         is_pass = False
         unpass_reasons.append('missing or extra face')
-    for i, (det, result, gdet) in enumerate(zip(
-        dets[:2],
-        guidance_results.id_reference_results[1:],
-        guidance_results.guidance_image_results.get_detection('face', topk=2)
-    )):
-        f = result.extra['main_face_rec'].cpu().numpy()[0]
-        fnorm = (f ** 2).sum() ** 0.5
-        if fnorm == 0: # given `None` as ref will provide zero feature 
-            continue
-        f = f / fnorm
-        s = float(det.norm_feature.dot(f))
-        face_scores.append(s)
-        if s < 0.4:
-            is_pass = False
-            unpass_reasons.append('face %d low similarity' % i)
-        iou = det.compute_iou(gdet)
-        extras['face_iou'].append(iou)
-        if iou < 0.6:
-            is_pass = False
-            unpass_reasons.append('face %d low iou with guidance' % i)
+    else:
+        for i, (det, result, gdet) in enumerate(zip(
+            dets[:2],
+            guidance_results.id_reference_results[1:],
+            guidance_results.guidance_image_results.get_detection('face', topk=2)
+        )):
+            f = result.extra['main_face_rec'].cpu().numpy()[0]
+            fnorm = (f ** 2).sum() ** 0.5
+            if fnorm == 0: # given `None` as ref will provide zero feature 
+                continue
+            f = f / fnorm
+            s = float(det.norm_feature.dot(f))
+            face_scores.append(s)
+            if s < 0.4:
+                is_pass = False
+                unpass_reasons.append('face %d low similarity' % i)
+            iou = det.compute_iou(gdet)
+            extras['face_iou'].append(iou)
+            if iou < 0.6:
+                is_pass = False
+                unpass_reasons.append('face %d low iou with guidance' % i)
         
     examine = ExamineResult(
         face_count=len(dets),
