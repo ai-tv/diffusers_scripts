@@ -5,6 +5,7 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image
+from torch.nn import functional as F
 
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.utils.torch_utils import is_compiled_module
@@ -114,13 +115,13 @@ def latent_couple_with_control(
     generator = None,
     eta: float = 0.0,
     cross_attention_kwargs = None,
-    guess_mode = False,
     control_mode = 'prompt',
     control_guidance_start: Union[float, List[float]] = 0.0,
     control_guidance_end: Union[float, List[float]] = 0.5,
     controlnet_conditioning_scale = 1.0,
     control_preprocess_mode: str = "webui",
     control_scale_decay_ratio: float = 0.825,
+    controlnet_weight_map = None,
     main_prompt_decay = 0.01,
     latent_couple_min_ratio: float = 0.1,
     latent_couple_max_ratio: float = 0.9,
@@ -190,6 +191,7 @@ def latent_couple_with_control(
     # pipes[0].check_inputs(None, image, callback_steps, None, prompt_embeds[0], negative_prompt_embed, controlnet_conditioning_scale, control_guidance_start, control_guidance_end)
     
     # 2. Define call parameters
+    guess_mode = control_mode == "control"
     batch_size = prompt_embeddings[0].shape[0]
     
     devices = [pipe._execution_device for pipe in pipes]
@@ -217,7 +219,7 @@ def latent_couple_with_control(
             device=pipes[0].device,
             dtype=controlnet.dtype,
             do_classifier_free_guidance=do_classifier_free_guidance,
-            guess_mode=guess_mode,
+            guess_mode=False,
             preprocess_mode=control_preprocess_mode
         )
         # height, width = image.shape[-2:]
@@ -235,7 +237,7 @@ def latent_couple_with_control(
                 device=device,
                 dtype=controlnet.dtype,
                 do_classifier_free_guidance=do_classifier_free_guidance,
-                guess_mode=guess_mode,
+                guess_mode=False,
                 preprocess_mode=control_preprocess_mode
             )
     
@@ -245,7 +247,18 @@ def latent_couple_with_control(
         # height, width = image[0].shape[-2:]
     else:
         assert False
-    
+    if controlnet_weight_map is not None:
+        controlnet_weight_map_tensor, _ = detectmap_proc(controlnet_weight_map, height, width)
+        controlnet_weight_map_tensor = torch.logical_not(controlnet_weight_map_tensor > 0).to(torch.float16).cuda()
+        controlnet_weight_maps = []
+        for downscale in [8, 16, 32, 64]:
+            h, w = controlnet_weight_map_tensor.shape[-2:]
+            resized_map = F.upsample(controlnet_weight_map_tensor, (h // downscale, w // downscale))
+            resized_map = resized_map[:, :1, ...]
+            print(resized_map.min(), resized_map.max())
+            for _ in range(3):
+                controlnet_weight_maps.append(resized_map)
+            
     # 5. Prepare timesteps
     timesteps_list = []
     for pipe in pipes:
@@ -279,6 +292,9 @@ def latent_couple_with_control(
         controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
     if control_mode == 'prompt':
         controlnet_scales = [(control_scale_decay_ratio ** float(13 - i)) for i in range(13)]    
+    elif control_mode == 'control':
+        controlnet_scales = [0.1000, 0.1212, 0.1468, 0.1778, 0.2154, 0.2610, 0.3162, 0.3831, 0.4642,
+        0.5623, 0.6813, 0.8254, 1.0000]
     else:
         controlnet_scales = [1 for _ in range(13)]
     
@@ -308,7 +324,7 @@ def latent_couple_with_control(
                 conditioning_scale=cond_scale,
                 guess_mode=guess_mode,
                 return_dict=False,
-            )
+            )                
             down_block_res_samples_neg, mid_block_res_sample_neg = controlnet(
                 latent_model_input[:1],
                 t,
@@ -322,7 +338,14 @@ def latent_couple_with_control(
             mid_block_res_sample = mid_block_res_sample * controlnet_scales[-1]
             down_block_res_samples_neg = [ds * s for ds, s in zip(down_block_res_samples_neg, controlnet_scales)]
             mid_block_res_sample_neg = mid_block_res_sample_neg * controlnet_scales[-1]
-
+            if controlnet_weight_map is not None:
+                # print("------" * 10)
+                # print([d.shape for d in down_block_res_samples])
+                # print([c.shape for c in controlnet_weight_maps])
+                down_block_res_samples = [d*controlnet_weight_maps[i] for i, d in enumerate(down_block_res_samples)]
+                mid_block_res_sample *= controlnet_weight_maps[-1]
+                down_block_res_samples_neg = [d*controlnet_weight_maps[i] for i, d in enumerate(down_block_res_samples_neg)]
+                mid_block_res_sample_neg *= controlnet_weight_maps[-1]
             # down_block_res_samples_list, mid_block_res_sample_list = [], []
             # for j in range(len(prompt_embeddings)):
             #     down_block_res_samples_list.append([torch.stack([down_block_res_samples_neg[k][0], d[j]], dim=0) for k, d in enumerate(down_block_res_samples)])
@@ -350,8 +373,8 @@ def latent_couple_with_control(
                 t,
                 encoder_hidden_states=negative_prompt_embeds[j:j+1],
                 cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=[d for d in down_block_res_samples_neg] if use_controlnet else None,
-                mid_block_additional_residual=mid_block_res_sample_neg if use_controlnet else None,
+                down_block_additional_residuals=[d for d in down_block_res_samples_neg] if use_controlnet and not guess_mode else None,
+                mid_block_additional_residual=mid_block_res_sample_neg if use_controlnet and not guess_mode else None,
                 return_dict=False,                        
             )[0] # if j == 0 else noise_pred_uncond
             # noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)

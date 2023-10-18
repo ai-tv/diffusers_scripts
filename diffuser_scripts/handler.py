@@ -44,7 +44,7 @@ def handle_latent_couple(
         '1:32-0:%s-32' % (mid, )
     ]
     logger.info("use pos %s" % (params.latent_pos, ))
-    couple_mask_list = None #guidance_results.latent_masks
+    couple_mask_list = None # guidance_results.latent_masks
 
 
     ### 3. latent couple preprocess
@@ -111,8 +111,9 @@ def handle_latent_couple(
                 controlnet_conditioning_scale = params.control_guidance_scale,
                 main_prompt_decay = params.latent_mask_weight_decay,
                 control_preprocess_mode = params.control_preprocess_mode,
-                generator = torch.Generator(device='cuda').manual_seed(params.random_seed),
                 control_scale_decay_ratio = params.control_scale_decay_ratio,
+                controlnet_weight_map = guidance_results.controlnet_face_reweight_mask if params.face_control_off else None,
+                generator = torch.Generator(device='cuda').manual_seed(params.random_seed),
                 latent_couple_min_ratio=params.latent_couple_min_ratio,
                 latent_couple_max_ratio=params.latent_couple_max_ratio,
                 couple_mask_list=couple_mask_list,
@@ -230,7 +231,7 @@ def detailer(
                 text_embedding, uncond_embedding = get_weighted_text_embeddings(
                     model_manager.ad_pipeline,
                     prompt="%s, young, good-looking, best quality" % params.prompt[1+i], 
-                    uncond_prompt="paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
+                    uncond_prompt="(beard), paintings, sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), wrinkle, skin spots, acnes, skin blemishes, age spot, glans, lowres,bad anatomy,bad hands, text, error, missing fingers,extra digit, fewer digits, cropped, worstquality, low quality, normal quality,jpegartifacts,signature, watermark, username,blurry,bad feet,cropped,poorly drawn hands,poorly drawn face,mutation,deformed,worst quality,low quality,normal quality,jpeg artifacts,watermark,extra fingers,fewer digits,extra limbs,extra arms,extra legs,malformed limbs,fused fingers,too many fingers,long neck,cross-eyed,mutated hands,polar lowres,bad body,bad proportions,gross proportions,text,error,missing fingers,missing arms,missing legs,extra digit,(nsfw:1.5), (sexy)"
                 )
                 if f is not None:
                     f = model_manager.detailer_id_mlp(f)

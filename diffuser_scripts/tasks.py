@@ -90,6 +90,7 @@ class Txt2ImageWithControlParams(Txt2ImageParams):
     control_guidance_end: T.Union[float, T.List[float]] = 0.5
     control_preprocess_mode: str = "webui"
     control_scale_decay_ratio: float = 0.825
+    face_control_off: bool = False
 
     @property
     def condition_image(self):

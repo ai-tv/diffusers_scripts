@@ -67,6 +67,25 @@ def process_masks(masks, h, w, cls_weight=0.6, neg_cls_weight=0.1, bg_weight=0.3
         for mask in new_masks
     ]
 
+
+def create_control_guidance_mask(image_result):
+    from sbp.vision.common import relax_bbox
+    faces = image_result.get_detection('face', topk=2)
+    h, w = image_result.height, image_result.width
+    final_mask = 0
+    for face in faces:
+        rect = face.bbox
+        x1, y1, x2, y2 = relax_bbox(rect, h, w, 0.3, 0.2, 0.4, return_integer=True)
+        large_mask = np.zeros((h, w))
+        large_mask[y1:y2, x1:x2] = 1.0
+        x1, y1, x2, y2 = relax_bbox(rect, h, w, -0.25, -0.1, -0.05, return_integer=True)
+        small_mask = np.zeros((h, w))
+        small_mask[y1:y2, x1:x2] = 1.0
+        mask = (large_mask - small_mask) > 0
+        final_mask = mask | final_mask
+    return final_mask.astype(np.uint8) * 255
+
+
 @dataclass
 class GuidanceInfo:
 
@@ -74,6 +93,8 @@ class GuidanceInfo:
     id_reference_results: T.List[ImageResult]
     annotations: T.List
     latent_masks: T.List
+    controlnet_face_reweight_mask: np.ndarray = None
+    controlnet_hand_reweight_mask: np.ndarray = None
 
 
 class GuidanceProcessor:
@@ -174,6 +195,7 @@ class GuidanceProcessor:
             annotator_names = params.control_annotators
             image_result = self.infer_guidance_image(params.condition_img_str, params.height, params.width)
             segments = image_result.get_detection('person', topk=2)        
+            # controlnet_face_mask = create_control_guidance_mask(image_result)
             latent_mask = process_masks(
                 [seg.mask for seg in segments], 
                 params.height, params.width, 
@@ -200,7 +222,8 @@ class GuidanceProcessor:
             guidance_image_results = image_result,
             id_reference_results = id_reference_results,
             annotations = control_image,
-            latent_masks = latent_mask
+            latent_masks = latent_mask,
+            # controlnet_face_reweight_mask = controlnet_face_mask
         )
 
     def get_face_feature(self, params):
