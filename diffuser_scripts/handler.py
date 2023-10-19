@@ -143,7 +143,7 @@ def handle_latent_couple(
     image_result = client.request_face(encode_image_b64(result))
     dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
     result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs, dets=dets)
-    examine_result = examine_image(result, guidance_results, client)
+    examine_result = examine_image(result, guidance_results, client, model_manager.pipelines[0])
     logger.info("%s examine: %s" % (request_id, examine_result))
 
     ### 5. parse and save output and return
@@ -160,6 +160,7 @@ def examine_image(
     image,
     guidance_results,
     face_client,
+    pipeline
 ):
     is_pass = True
     face_scores = []
@@ -173,6 +174,7 @@ def examine_image(
         is_pass = False
         unpass_reasons.append('missing or extra face')
     else:
+        dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
         for i, (det, result, gdet) in enumerate(zip(
             dets[:2],
             guidance_results.id_reference_results[1:],
@@ -185,7 +187,7 @@ def examine_image(
             f = f / fnorm
             s = float(det.norm_feature.dot(f))
             face_scores.append(s)
-            if s < 0.4:
+            if s < 0.35:
                 is_pass = False
                 unpass_reasons.append('face %d low similarity' % i)
             iou = det.compute_iou(gdet)
@@ -193,12 +195,23 @@ def examine_image(
             if iou < 0.6:
                 is_pass = False
                 unpass_reasons.append('face %d low iou with guidance' % i)
+
+    _, is_nsfw = pipeline.run_safety_checker(
+        np.array(image)[..., ::-1], 
+        pipeline.device, torch.float16)
+    if is_nsfw[0]:
+        nsfw_score = 0.0
+        is_pass = False
+        unpass_reasons.append("nsfw content")
+    else:
+        nsfw_score = 1.0
         
     examine = ExamineResult(
         face_count=len(dets),
         face_sim_scores=face_scores,
         is_pass = is_pass,
         unpass_reasons = unpass_reasons,
+        sfw_score = nsfw_score,
         extras = dict(extras)
     )
     return examine

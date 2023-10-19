@@ -255,7 +255,7 @@ def latent_couple_with_control(
             h, w = controlnet_weight_map_tensor.shape[-2:]
             resized_map = F.upsample(controlnet_weight_map_tensor, (h // downscale, w // downscale))
             resized_map = resized_map[:, :1, ...]
-            print(resized_map.min(), resized_map.max())
+            # print(resized_map.min(), resized_map.max())
             for _ in range(3):
                 controlnet_weight_maps.append(resized_map)
             

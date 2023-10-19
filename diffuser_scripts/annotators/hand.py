@@ -90,7 +90,7 @@ class Hand:
                 iou = bboxes[i].compute_iou(bboxes[j])
                 ious[-1].append(iou)
         ious = np.array(ious)
-        print(ious)
+        # print(ious)
         excludes = set()
         for i, iou in enumerate(ious):
             for j, _iou in enumerate(iou):

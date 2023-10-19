@@ -116,9 +116,7 @@ def load_latent_couple_pipeline(
     main_pipe = load_method[model_info['load_method']](
         model_info['local_path'],
         torch_dtype=torch.float16,
-        load_safety_checker=False,
         local_files_only=True,
-        safety_checker = None
     )
     pipes = []
     for i, name in enumerate(config.model_names):
@@ -143,22 +141,20 @@ def load_latent_couple_pipeline(
             unet = unet,
             controlnet = control_model,
             scheduler = copy.deepcopy(default_samplers['dpm++']),
-            safety_checker = None,
-            feature_extractor = None,
-            requires_safety_checker = False
+            safety_checker = main_pipe.safety_checker,
+            feature_extractor = main_pipe.feature_extractor,
         )
         pipe.to('cuda')
         pipes.append(pipe)
     
-    del main_pipe
-    return pipes
+    return pipes, main_pipe.safety_checker
 
 
 class LatentCouplePipelinesManager:
 
     def __init__(self, config: LatentCoupleConfig, model_config: T.Dict):
         self.preprocessor = load_preprocessor(config)
-        self.pipelines = load_latent_couple_pipeline(config, model_config)
+        self.pipelines, self.safety_checker = load_latent_couple_pipeline(config, model_config)
         if config.ad_pipeline is not None:
             from asdff import AdPipeline
             logger.info("loading detailer ...")
