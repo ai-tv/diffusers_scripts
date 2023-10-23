@@ -28,16 +28,20 @@ def handle_latent_couple(
     log_dir: str = 'log'
 ):
     request_id = params.uniq_id
+    assert params.expected_person_count < 3, "only less than 2 person supported"
 
     ### 2. preprocess
     guidance_results = model_manager.preprocessor.get_guidance_result(params, log_dir='log')
     r = guidance_results.guidance_image_results
     faces = r.get_detection('face', topk=2)
-    if len(faces) == 2:
-        mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
-        mid = int(mid)
+    if params.expected_person_count == 2:
+        if len(faces) == 2:
+            mid = np.round((faces[0].center_x + faces[1].center_x) / 2 / r.width * 32)
+            mid = int(mid)
+        else:
+            mid = 16
     else:
-        mid = 16
+        mid = 32
     params.latent_pos = [
         '1:1-0:0',
         '1:32-0:0-%s' % (mid, ),
@@ -141,9 +145,9 @@ def handle_latent_couple(
 
     client = model_manager.preprocessor.face_detector
     image_result = client.request_face(encode_image_b64(result))
-    dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
+    dets = image_result.get_detection('face', topk=params.expected_person_count, topk_order='area', return_order='center_x')
     result = detailer(model_manager, params, init_image=result, features=features, lora_configs=ad_lora_configs, dets=dets)
-    examine_result = examine_image(result, guidance_results, client, model_manager.pipelines[0])
+    examine_result = examine_image(result, guidance_results, client, model_manager.pipelines[0], params)
     logger.info("%s examine: %s" % (request_id, examine_result))
 
     ### 5. parse and save output and return
@@ -160,23 +164,26 @@ def examine_image(
     image,
     guidance_results,
     face_client,
-    pipeline
+    pipeline,
+    params: Txt2ImageParams
 ):
     is_pass = True
     face_scores = []
     unpass_reasons = []
     extras = collections.defaultdict(list)
     image_result = face_client.request_face(encode_image_b64(image))
-    dets = image_result.get_detection('face', topk=3, topk_order='area', return_order='area')
-    if len(dets) > 2 and dets[0].area / dets[1].area < 0.2:
-        dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
-    if len(dets) != 2:
+    dets = image_result.get_detection('face', 
+        topk=params.expected_person_count + 1, topk_order='area', return_order='area')
+    if len(dets) > params.expected_person_count and dets[0].area / dets[1].area < 0.2:
+        dets = image_result.get_detection('face', topk=params.expected_person_count, topk_order='area', return_order='center_x')
+    if len(dets) != params.expected_person_count:
         is_pass = False
-        unpass_reasons.append('missing or extra face')
+        unpass_reasons.append('face count %d inequal to expected %d' 
+            % (len(dets), params.expected_person_count))
     else:
-        dets = image_result.get_detection('face', topk=2, topk_order='area', return_order='center_x')
+        dets = image_result.get_detection('face', topk=params.expected_person_count, topk_order='area', return_order='center_x')
         for i, (det, result, gdet) in enumerate(zip(
-            dets[:2],
+            dets[:params.expected_person_count],
             guidance_results.id_reference_results[1:],
             guidance_results.guidance_image_results.get_detection('face', topk=2)
         )):
@@ -187,7 +194,7 @@ def examine_image(
             f = f / fnorm
             s = float(det.norm_feature.dot(f))
             face_scores.append(s)
-            if s < 0.35:
+            if s < params.expected_face_sim:
                 is_pass = False
                 unpass_reasons.append('face %d low similarity' % i)
             iou = det.compute_iou(gdet)

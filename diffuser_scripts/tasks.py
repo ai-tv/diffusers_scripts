@@ -60,6 +60,9 @@ class Txt2ImageParams:
     width: int = 512
     sampler: str = 'dpmsolver++'
     num_inference_steps: int = 30
+    expected_person_count: int = 2
+    expected_face_sim: float = 0.3
+    expected_face_iou: float = 0.66
     extra_params: T.Optional[T.Dict] = None
     random_seed: int = -1
     debug_steps: T.List[int] = field(default_factory=list)
